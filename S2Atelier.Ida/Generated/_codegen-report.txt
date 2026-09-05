@@ -1,0 +1,129 @@
+S2Atelier.Ida.Codegen report
+[9.2] config.hpp: 'read_config' skipped — parameter type: 'cfgopt_t opts[]' is not a known primitive or typedef, used by value
+[9.2] config.hpp: 'read_config2' skipped — parameter type: 'cfgopt_t opts[]' is not a known primitive or typedef, used by value
+[9.2] config.hpp: 'register_cfgopts' skipped — parameter type: 'cfgopt_t opts[]' is not a known primitive or typedef, used by value
+[9.2] cvt64.hpp: 'cvt64_node_supval_for_event' skipped — parameter type: 'va_list' is not a known primitive or typedef, used by value
+[9.2] diskio.hpp: 'qlseek' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] expr.hpp: 'call_idc_func' skipped — parameter type: 'idc_value_t args[]' is not a known primitive or typedef, used by value
+[9.2] fpro.h: 'qftell' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] fpro.h: 'qfseek' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] ida.hpp: 'invoke_callbacks' skipped — parameter type: 'va_list' is not a known primitive or typedef, used by value
+[9.2] idalib.hpp: 'init_library' skipped — parameter type: 'char *argv[]' is not a known primitive or typedef, used by value
+[9.2] ieee.h: 'emovo' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.2] ieee.h: 'emovi' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.2] ieee.h: 'eshift' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.2] ieee.h: 'emdnorm' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.2] jumptable.hpp: 'check_for_table_jump' skipped — parameter type: 'is_pattern_t * patterns[]' is not a known primitive or typedef, used by value
+[9.2] kernwin.hpp: 'btoa128' skipped — parameter type: 'unsigned __int128' is not a known primitive or typedef, used by value
+[9.2] lines.hpp: 'create_encoding_helper' skipped — parameter type: 'encoder_t::notify_recerr_t' is not a known primitive or typedef, used by value
+[9.2] loader.hpp: 'load_binary_file' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] loader.hpp: 'file2base' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] loader.hpp: 'mem2base' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] loader.hpp: 'base2file' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] loader.hpp: 'get_fileregion_offset' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] loader.hpp: 'get_fileregion_ea' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] md5.h: 'MD5Final' skipped — parameter type: 'uchar digest[16]' is not a known primitive or typedef, used by value
+[9.2] md5.h: 'MD5Transform' skipped — parameter type: 'uint32 buf[4]' is not a known primitive or typedef, used by value
+[9.2] merge.hpp: 'create_nodeval_merge_handler' skipped — parameter type: 'merge_node_hlpfunc_creator_t' is not a known primitive or typedef, used by value
+[9.2] moves.hpp: 'bookmarks_t_set_desc' skipped — parameter type: 'qstring' used by value has no safe by-value mapping
+[9.2] pro.h: 'qlocaltime' skipped — parameter type: 'time_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qgmtime' skipped — parameter type: 'time_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qtimegm' skipped — return type: 'time_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'vqmakepath' skipped — parameter type: 'va_list' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qmakepath' skipped — variadic parameter list
+[9.2] pro.h: 'qtell' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qseek' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qstrchr' skipped — parameter type: 'wchar_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qstrrchr' skipped — parameter type: 'wchar_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qstr2user' redeclared with a different signature ('delegate* unmanaged[Cdecl]<QString*, byte*, int, void>' vs 'delegate* unmanaged[Cdecl]<QString*, QString*, void>'); keeping the first.
+[9.2] pro.h: 'qthread_create' skipped — return type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qthread_free' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qthread_join' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qthread_kill' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qthread_self' skipped — return type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qthread_same' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qthread_equal' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qsem_create' skipped — return type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qsem_free' skipped — parameter type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qsem_post' skipped — parameter type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qsem_wait' skipped — parameter type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qmutex_free' skipped — parameter type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qmutex_create' skipped — return type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qmutex_lock' skipped — parameter type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qmutex_unlock' skipped — parameter type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'qpipe_create' skipped — parameter type: 'qhandle_t handles[2]' is not a known primitive or typedef, used by value
+[9.2] pro.h: 'cliopts_t_apply' skipped — parameter type: 'char *[]' is not a known primitive or typedef, used by value
+[9.2] range.hpp: 'rangeset_t_lower_bound' skipped — return type: 'rangevec_t::const_iterator' is not a known primitive or typedef, used by value
+[9.2] range.hpp: 'rangeset_t_upper_bound' skipped — return type: 'rangevec_t::const_iterator' is not a known primitive or typedef, used by value
+[9.2] regex.h: 'qregexec' skipped — parameter type: 'regmatch_t pmatch[]' is not a known primitive or typedef, used by value
+[9.2] regfinder.hpp: 'find_nearest_rvi' skipped — parameter type: 'int reg[2]' is not a known primitive or typedef, used by value
+[9.2] regfinder.hpp: 'reg_finder_find' skipped — parameter type: 'reg_finder_op_t' is not a known primitive or typedef, used by value
+[9.2] regfinder.hpp: 'reg_finder_emulate_binary_op' skipped — parameter type: 'reg_finder_binary_ops_adjust_fun' is not a known primitive or typedef, used by value
+[9.2] regfinder.hpp: 'reg_finder_may_modify_stkvar' skipped — parameter type: 'reg_finder_op_t' is not a known primitive or typedef, used by value
+[9.2] segment.hpp: 'add_segm_ex' skipped — parameter type: 'segment_t *NONNULL' is not a known primitive or typedef, used by value
+9.2 (V92): 1482 symbols resolved, 61 declarations skipped, from 70 headers.
+[9.3] config.hpp: 'read_config' skipped — parameter type: 'cfgopt_t opts[]' is not a known primitive or typedef, used by value
+[9.3] config.hpp: 'read_config2' skipped — parameter type: 'cfgopt_t opts[]' is not a known primitive or typedef, used by value
+[9.3] config.hpp: 'register_cfgopts' skipped — parameter type: 'cfgopt_t opts[]' is not a known primitive or typedef, used by value
+[9.3] cvt64.hpp: 'cvt64_node_supval_for_event' skipped — parameter type: 'va_list' is not a known primitive or typedef, used by value
+[9.3] diskio.hpp: 'qlseek' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] expr.hpp: 'call_idc_func' skipped — parameter type: 'idc_value_t args[]' is not a known primitive or typedef, used by value
+[9.3] fpro.h: 'qftell' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] fpro.h: 'qfseek' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] ida.hpp: 'invoke_callbacks' skipped — parameter type: 'va_list' is not a known primitive or typedef, used by value
+[9.3] idalib.hpp: 'init_library' skipped — parameter type: 'char *argv[]' is not a known primitive or typedef, used by value
+[9.3] ieee.h: 'emovo' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.3] ieee.h: 'emovi' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.3] ieee.h: 'eshift' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.3] ieee.h: 'emdnorm' skipped — parameter type: 'eNI' is not a known primitive or typedef, used by value
+[9.3] jumptable.hpp: 'check_for_table_jump' skipped — parameter type: 'is_pattern_t * patterns[]' is not a known primitive or typedef, used by value
+[9.3] kernwin.hpp: 'mark_builtin_widgets' skipped — parameter type: 'unsigned __int128' is not a known primitive or typedef, used by value
+[9.3] kernwin.hpp: 'btoa128' skipped — parameter type: 'unsigned __int128' is not a known primitive or typedef, used by value
+[9.3] lines.hpp: 'create_encoding_helper' skipped — parameter type: 'encoder_t::notify_recerr_t' is not a known primitive or typedef, used by value
+[9.3] loader.hpp: 'load_binary_file' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] loader.hpp: 'file2base' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] loader.hpp: 'mem2base' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] loader.hpp: 'base2file' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] loader.hpp: 'get_fileregion_offset' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] loader.hpp: 'get_fileregion_ea' skipped — parameter type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] md5.h: 'MD5Final' skipped — parameter type: 'uchar digest[16]' is not a known primitive or typedef, used by value
+[9.3] md5.h: 'MD5Transform' skipped — parameter type: 'uint32 buf[4]' is not a known primitive or typedef, used by value
+[9.3] merge.hpp: 'create_nodeval_merge_handler' skipped — parameter type: 'merge_node_hlpfunc_creator_t' is not a known primitive or typedef, used by value
+[9.3] moves.hpp: 'bookmarks_t_set_desc' skipped — parameter type: 'qstring' used by value has no safe by-value mapping
+[9.3] pro.h: 'qlocaltime' skipped — parameter type: 'time_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qgmtime' skipped — parameter type: 'time_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qtimegm' skipped — return type: 'time_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'vqmakepath' skipped — parameter type: 'va_list' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qmakepath' skipped — variadic parameter list
+[9.3] pro.h: 'qtell' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qseek' skipped — return type: 'qoff64_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qstrchr' skipped — parameter type: 'wchar_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qstrrchr' skipped — parameter type: 'wchar_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qstr2user' redeclared with a different signature ('delegate* unmanaged[Cdecl]<QString*, byte*, int, void>' vs 'delegate* unmanaged[Cdecl]<QString*, QString*, void>'); keeping the first.
+[9.3] pro.h: 'qthread_create' skipped — return type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qthread_free' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qthread_join' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qthread_kill' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qthread_self' skipped — return type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qthread_same' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qthread_equal' skipped — parameter type: 'qthread_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qsem_create' skipped — return type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qsem_free' skipped — parameter type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qsem_post' skipped — parameter type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qsem_wait' skipped — parameter type: 'qsemaphore_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qmutex_free' skipped — parameter type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qmutex_create' skipped — return type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qmutex_lock' skipped — parameter type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qmutex_unlock' skipped — parameter type: 'qmutex_t' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'qpipe_create' skipped — parameter type: 'qhandle_t handles[2]' is not a known primitive or typedef, used by value
+[9.3] pro.h: 'cliopts_t_apply' skipped — parameter type: 'char *[]' is not a known primitive or typedef, used by value
+[9.3] range.hpp: 'rangeset_t_lower_bound' skipped — return type: 'rangevec_t::const_iterator' is not a known primitive or typedef, used by value
+[9.3] range.hpp: 'rangeset_t_upper_bound' skipped — return type: 'rangevec_t::const_iterator' is not a known primitive or typedef, used by value
+[9.3] regex.h: 'qregexec' skipped — parameter type: 'regmatch_t pmatch[]' is not a known primitive or typedef, used by value
+[9.3] regfinder.hpp: 'find_nearest_rvi' skipped — parameter type: 'int reg[2]' is not a known primitive or typedef, used by value
+[9.3] regfinder.hpp: 'reg_finder_find' skipped — parameter type: 'reg_finder_op_t' is not a known primitive or typedef, used by value
+[9.3] regfinder.hpp: 'reg_finder_emulate_binary_op' skipped — parameter type: 'reg_finder_binary_ops_adjust_fun' is not a known primitive or typedef, used by value
+[9.3] regfinder.hpp: 'reg_finder_may_modify_stkvar' skipped — parameter type: 'reg_finder_op_t' is not a known primitive or typedef, used by value
+[9.3] segment.hpp: 'add_segm_ex' skipped — parameter type: 'segment_t *NONNULL' is not a known primitive or typedef, used by value
+9.3 (V93): 1524 symbols resolved, 62 declarations skipped, from 79 headers.
+'dirtree_set_natural_order' excluded from the shared surface — signature differs between versions: V92=delegate* unmanaged[Cdecl]<void*, ulong, byte, byte>, V93=delegate* unmanaged[Cdecl]<void*, ulong, byte, int>

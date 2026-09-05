@@ -1,3 +1,5 @@
 <Solution>
     <Project Path="S2Atelier.csproj" />
+    <Project Path="S2Atelier.Ida\S2Atelier.Ida.csproj" />
+    <Project Path="S2Atelier.Ida.Codegen\S2Atelier.Ida.Codegen.csproj" />
 </Solution>

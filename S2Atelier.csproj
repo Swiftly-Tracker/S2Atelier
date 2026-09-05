@@ -5,6 +5,33 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Shipped as one standalone binary: publishing self-contained for a specific runtime
+         identifier produces a single native apphost with no separate framework or "dotnet.exe"
+         involved. Each worker then relaunches that exact binary as its own worker process (see
+         IdaWorkerPool), never dotnet itself. Pick the runtime identifier at publish time
+         (e.g. linux x64, win x64), not here. -->
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="S2Atelier.Ida\S2Atelier.Ida.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Default globbing is recursive from the project directory, which would otherwise also
+         pull in the referenced projects' own .cs files (they live in subdirectories here). -->
+    <Compile Remove="S2Atelier.Ida\**\*.cs" />
+    <Compile Remove="S2Atelier.Ida.Codegen\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.11" />
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
 
 </Project>
