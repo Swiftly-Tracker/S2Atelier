@@ -14,6 +14,9 @@ internal sealed class WireMessage
     public bool NameConVars { get; init; }
     public bool NameFnPtrTables { get; init; }
     public string? ImportProtobufsDir { get; init; }
+    public string? ImportSchemaPath { get; init; }
+    public string? Hl2SdkPath { get; init; }
+    public string SchemaProject { get; init; } = "auto";
 
     public string? Sdk { get; init; }
 
@@ -36,6 +39,14 @@ internal sealed class WireMessage
     public bool ProtoImportApplicable { get; init; }
     public int ProtoTypesDefined { get; init; }
     public int ProtoImportErrors { get; init; }
+    public bool SchemaImportApplicable { get; init; }
+    public string? ImportedSchemaProject { get; init; }
+    public int SchemaTypesImported { get; init; }
+    public int SchemaVTablesMatched { get; init; }
+    public int SchemaFunctionsBound { get; init; }
+    public int SchemaFunctionsSkipped { get; init; }
+    public int SchemaFunctionConflicts { get; init; }
+    public int SchemaClangErrors { get; init; }
 
     public string? Error { get; init; }
 }

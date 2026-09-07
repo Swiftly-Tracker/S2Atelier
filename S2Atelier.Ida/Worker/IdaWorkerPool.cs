@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Reflection;
 using System.Text;
 using S2Atelier.Ida.Generated;
 
@@ -12,7 +11,10 @@ public sealed record BatchItem(
     bool ConVarNamingApplicable = false, int ConVarNamingFound = 0,
     int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0,
     int FnPtrNamingFound = 0, int FnPtrNamingRenamed = 0,
-    bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0);
+    bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0,
+    bool SchemaImportApplicable = false, string? SchemaProject = null, int SchemaTypesImported = 0,
+    int SchemaVTablesMatched = 0, int SchemaFunctionsBound = 0, int SchemaFunctionsSkipped = 0,
+    int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0);
 
 public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) : IDisposable
 {
@@ -21,10 +23,27 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
     public IReadOnlyList<BatchItem> RunBatch(
         IReadOnlyList<string> paths,
         bool save,
+        bool patchPlt,
+        bool nameConVars,
+        bool nameFnPtrTables,
+        string? importProtobufsDir,
+        Action<string, int>? onStarted,
+        Action<int, BatchItem>? onFinished,
+        Action<int, double, ulong>? onProgress)
+        => RunBatch(paths, save, patchPlt, nameConVars, nameFnPtrTables, importProtobufsDir,
+            importSchemaPath: null, hl2SdkPath: null, schemaProject: "auto",
+            onStarted: onStarted, onFinished: onFinished, onProgress: onProgress);
+
+    public IReadOnlyList<BatchItem> RunBatch(
+        IReadOnlyList<string> paths,
+        bool save,
         bool patchPlt = false,
         bool nameConVars = false,
         bool nameFnPtrTables = false,
         string? importProtobufsDir = null,
+        string? importSchemaPath = null,
+        string? hl2SdkPath = null,
+        string schemaProject = "auto",
         Action<string, int>? onStarted = null,
         Action<int, BatchItem>? onFinished = null,
         Action<int, double, ulong>? onProgress = null)
@@ -51,7 +70,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                 {
                     onStarted?.Invoke(paths[index], worker.Index);
                     var item = worker.Run(paths[index], save, patchPlt, nameConVars, nameFnPtrTables,
-                        importProtobufsDir, (fraction, address) => onProgress?.Invoke(worker.Index, fraction, address));
+                        importProtobufsDir, importSchemaPath, hl2SdkPath, schemaProject,
+                        (fraction, address) => onProgress?.Invoke(worker.Index, fraction, address));
                     results[index] = item;
                     onFinished?.Invoke(worker.Index, item);
                 }
@@ -94,7 +114,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
 
         internal BatchItem Run(
             string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables,
-            string? importProtobufsDir, Action<double, ulong>? onProgress = null)
+            string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath, string schemaProject,
+            Action<double, ulong>? onProgress = null)
         {
             string full = Path.GetFullPath(path);
 
@@ -116,6 +137,9 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     NameConVars = nameConVars,
                     NameFnPtrTables = nameFnPtrTables,
                     ImportProtobufsDir = importProtobufsDir,
+                    ImportSchemaPath = importSchemaPath,
+                    Hl2SdkPath = hl2SdkPath,
+                    SchemaProject = schemaProject,
                 }));
                 process.StandardInput.Flush();
 
@@ -123,13 +147,22 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                 {
                     var message = WorkerProtocol.Read(line);
 
-                    if (message?.Kind == WireKind.Progress)
+                    // idalib normally keeps its message window off because stdout carries the
+                    // worker protocol. Schema import briefly enables it so IDAClang diagnostics
+                    // are visible; relay those non-protocol lines through the parent's stderr.
+                    if (message == null)
+                    {
+                        Console.Error.WriteLine($"[worker {index}] {line}");
+                        continue;
+                    }
+
+                    if (message.Kind == WireKind.Progress)
                     {
                         onProgress?.Invoke(message.Fraction, message.Address);
                         continue;
                     }
 
-                    if (message?.Kind == WireKind.Done)
+                    if (message.Kind == WireKind.Done)
                     {
                         return new BatchItem(full, true, message.Functions, message.Segments,
                             message.Strings, TimeSpan.FromMilliseconds(message.Milliseconds), null,
@@ -137,12 +170,15 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                             message.ConVarNamingApplicable, message.ConVarNamingFound,
                             message.ConVarNamingRenamedObjects, message.ConVarNamingRenamedHandlers,
                             message.FnPtrNamingFound, message.FnPtrNamingRenamed,
-                            message.ProtoImportApplicable, message.ProtoTypesDefined, message.ProtoImportErrors);
+                            message.ProtoImportApplicable, message.ProtoTypesDefined, message.ProtoImportErrors,
+                            message.SchemaImportApplicable, message.ImportedSchemaProject, message.SchemaTypesImported,
+                            message.SchemaVTablesMatched, message.SchemaFunctionsBound, message.SchemaFunctionsSkipped,
+                            message.SchemaFunctionConflicts, message.SchemaClangErrors);
                     }
 
-                    if (message?.Kind == WireKind.Failed)
+                    if (message.Kind == WireKind.Failed)
                     {
-                        return Failed(full, message.Error ?? "The worker did not say why.");
+                        return Failed(full, message.Error ?? "The worker did not say why.", message.SchemaClangErrors);
                     }
                 }
 
@@ -179,12 +215,9 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             string hostName = Path.GetFileNameWithoutExtension(host);
             if (hostName.Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             {
+                string? entryDll = Environment.GetCommandLineArgs().FirstOrDefault();
 
-#pragma warning disable IL3000
-                string? entryDll = Assembly.GetEntryAssembly()?.Location;
-#pragma warning restore IL3000
-
-                if (string.IsNullOrEmpty(entryDll))
+                if (string.IsNullOrEmpty(entryDll) || !entryDll.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
@@ -238,7 +271,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             return true;
         }
 
-        private static BatchItem Failed(string path, string error) => new(path, false, 0, 0, 0, TimeSpan.Zero, error);
+        private static BatchItem Failed(string path, string error, int clangErrors = 0)
+            => new(path, false, 0, 0, 0, TimeSpan.Zero, error, SchemaClangErrors: clangErrors);
 
         private void Kill()
         {

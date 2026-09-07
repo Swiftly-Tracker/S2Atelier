@@ -24,11 +24,19 @@ internal sealed class CliOptions
 
     public string? ImportProtobufsDir { get; private set; }
 
+    public string? ImportSchemaPath { get; private set; }
+
+    public string? Hl2SdkPath { get; private set; }
+
+    public string SchemaProject { get; private set; } = "auto";
+
     public string? Root { get; private set; }
 
     public bool IsWorker { get; private set; }
 
     public bool ShowHelp { get; private set; }
+
+    public string? ParseError { get; private set; }
 
     public static CliOptions Parse(string[] args)
     {
@@ -87,6 +95,30 @@ internal sealed class CliOptions
                     options.ImportProtobufsDir = args[++i];
                     break;
 
+                case "--import-schema" when i + 1 < args.Length:
+                    options.ImportSchemaPath = args[++i];
+                    break;
+
+                case "--import-schema":
+                    options.ParseError = "--import-schema requires an sdk.json path.";
+                    break;
+
+                case "--hl2sdk" when i + 1 < args.Length:
+                    options.Hl2SdkPath = args[++i];
+                    break;
+
+                case "--hl2sdk":
+                    options.ParseError = "--hl2sdk requires a directory path.";
+                    break;
+
+                case "--schema-project" when i + 1 < args.Length:
+                    options.SchemaProject = args[++i];
+                    break;
+
+                case "--schema-project":
+                    options.ParseError = "--schema-project requires 'auto' or a project name.";
+                    break;
+
                 case "-h" or "--help":
                     options.ShowHelp = true;
                     break;
@@ -98,6 +130,82 @@ internal sealed class CliOptions
         }
 
         return options;
+    }
+
+    public bool ValidateSchemaOptions(out string? error)
+    {
+        error = null;
+        if ((ImportSchemaPath == null) != (Hl2SdkPath == null))
+        {
+            error = "--import-schema and --hl2sdk must be provided together.";
+            return false;
+        }
+        if (ImportSchemaPath == null)
+        {
+            if (!SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "--schema-project requires --import-schema and --hl2sdk.";
+                return false;
+            }
+            return true;
+        }
+
+        try
+        {
+            ImportSchemaPath = Path.GetFullPath(ImportSchemaPath);
+            Hl2SdkPath = Path.GetFullPath(Hl2SdkPath!);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            error = $"Invalid schema/HL2SDK path: {ex.Message}";
+            return false;
+        }
+        if (!File.Exists(ImportSchemaPath))
+        {
+            error = $"Schema JSON does not exist: '{ImportSchemaPath}'.";
+            return false;
+        }
+        if (!Directory.Exists(Hl2SdkPath))
+        {
+            error = $"HL2SDK directory does not exist: '{Hl2SdkPath}'.";
+            return false;
+        }
+        foreach (string required in new[]
+                 {
+                     "public", Path.Combine("game", "shared"), Path.Combine("game", "server"),
+                     Path.Combine("thirdparty", "protobuf-3.21.8", "src"), "common",
+                 })
+        {
+            if (!Directory.Exists(Path.Combine(Hl2SdkPath, required)))
+            {
+                error = $"HL2SDK is missing required directory '{required}': '{Hl2SdkPath}'.";
+                return false;
+            }
+        }
+        if (string.IsNullOrWhiteSpace(SchemaProject))
+        {
+            error = "--schema-project must be 'auto' or a non-empty project name.";
+            return false;
+        }
+        SchemaProject = SchemaProject.Trim();
+
+        try
+        {
+            var database = S2Atelier.Ida.Schema.SchemaDatabase.Load(ImportSchemaPath);
+            if (!SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase) && !database.HasProject(SchemaProject))
+            {
+                error = $"Schema project '{SchemaProject}' does not exist in '{ImportSchemaPath}'.";
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   S2Atelier.Ida.Schema.SchemaFormatException or System.Text.Json.JsonException)
+        {
+            error = $"Cannot use schema JSON '{ImportSchemaPath}': {ex.Message}";
+            return false;
+        }
+
+        return true;
     }
 
     private static IdaSdkVersion ParseSdkVersion(string value)

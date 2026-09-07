@@ -71,3 +71,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Source2SchemaDumper
+
+The schema header import follows Source2SchemaDumper's documented HL2SDK include/override strategy
+and its IDAClang compatibility shims. The JSON reader, dependency resolver, header writer, and IDA
+integration in this repository are a new C# implementation for S2Atelier's flat `sdk.json` input.
+
+- [GitHub Repository](https://github.com/GAMMACASE/Source2SchemaDumper)
+- **Author**: GAMMACASE
+- **License**: MIT (same copyright holder and license text reproduced in the PltPatcher notice above)

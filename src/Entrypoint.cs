@@ -23,16 +23,37 @@ public static class Entrypoint
             return;
         }
 
-        if (options.ShowHelp || options.Globs.Count == 0)
+        if (options.ShowHelp)
         {
             PrintUsage();
-            Environment.Exit(options.ShowHelp ? 0 : 1);
+            Environment.Exit(0);
+            return;
+        }
+
+        if (options.ParseError != null)
+        {
+            Console.Error.WriteLine(options.ParseError);
+            Environment.Exit(1);
+            return;
+        }
+
+        if (options.Globs.Count == 0)
+        {
+            PrintUsage();
+            Environment.Exit(1);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(options.IdaPath))
         {
             Console.Error.WriteLine("No IDA installation given. Pass --ida-path <dir> or set the IDA_PATH environment variable.");
+            Environment.Exit(1);
+            return;
+        }
+
+        if (!options.ValidateSchemaOptions(out string? schemaError))
+        {
+            Console.Error.WriteLine(schemaError);
             Environment.Exit(1);
             return;
         }
@@ -59,15 +80,18 @@ public static class Entrypoint
         Console.WriteLine($"Analyzing {matches.Count} binaries with {options.Cores} concurrent worker(s), " +
                            $"SDK {options.SdkVersion}, save={!options.NoSave}, patch-plt={options.PatchPlt}, " +
                            $"name-convars={options.NameConVars}, name-fnptr-tables={options.NameFnPtrTables}, " +
-                           $"import-protobufs={options.ImportProtobufsDir ?? "off"}.");
+                           $"import-protobufs={options.ImportProtobufsDir ?? "off"}, " +
+                           $"import-schema={options.ImportSchemaPath ?? "off"}, schema-project={options.SchemaProject}.");
 
         using var pool = new IdaWorkerPool(options.IdaPath, options.SdkVersion, options.Cores);
 
         var results = options.Progress
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
-                options.NameFnPtrTables, options.ImportProtobufsDir, options.Cores)
+                options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
+                options.SchemaProject, options.Cores)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
-                options.NameFnPtrTables, options.ImportProtobufsDir);
+                options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
+                options.SchemaProject);
 
         Console.WriteLine();
 
@@ -97,6 +121,11 @@ public static class Entrypoint
         if (options.ImportProtobufsDir != null)
         {
             table.AddColumn("Protobufs");
+        }
+
+        if (options.ImportSchemaPath != null)
+        {
+            table.AddColumn("Schema");
         }
 
         foreach (var item in results)
@@ -137,6 +166,16 @@ public static class Entrypoint
                     : "n/a");
             }
 
+            if (options.ImportSchemaPath != null)
+            {
+                row.Add(item.Succeeded && item.SchemaImportApplicable
+                    ? $"{item.SchemaProject}: {item.SchemaTypesImported} types, {item.SchemaVTablesMatched} vtables, " +
+                      $"{item.SchemaFunctionsBound} bound/{item.SchemaFunctionsSkipped} skipped/" +
+                      $"{item.SchemaFunctionConflicts} conflicts" +
+                      (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors (ignored)" : "")
+                    : item.SchemaClangErrors > 0 ? $"{item.SchemaClangErrors} clang errors" : "n/a");
+            }
+
             table.AddRow([.. row]);
         }
 
@@ -150,7 +189,8 @@ public static class Entrypoint
 
     private static IReadOnlyList<BatchItem> RunPlain(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
-        bool nameFnPtrTables, string? importProtobufsDir)
+        bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
+        string schemaProject)
         => pool.RunBatch(
             paths,
             save,
@@ -158,6 +198,9 @@ public static class Entrypoint
             nameConVars,
             nameFnPtrTables,
             importProtobufsDir,
+            importSchemaPath,
+            hl2SdkPath,
+            schemaProject,
             onStarted: (path, worker) => Console.WriteLine($"[worker {worker}] {Path.GetFileName(path)}: analyzing..."),
             onFinished: (_, item) => Console.WriteLine(item.Succeeded
                 ? $"[done]   {Path.GetFileName(item.Path)}: {item.Functions} functions, {item.Segments} segments, " +
@@ -168,11 +211,17 @@ public static class Entrypoint
                   (nameFnPtrTables ? $" [fnptrs: {item.FnPtrNamingFound} found, {item.FnPtrNamingRenamed} renamed]" : "") +
                   (importProtobufsDir != null && item.ProtoImportApplicable
                     ? $" [protobufs: {item.ProtoTypesDefined} types, {item.ProtoImportErrors} errors]" : "")
+                  + (importSchemaPath != null && item.SchemaImportApplicable
+                    ? $" [schema {item.SchemaProject}: {item.SchemaTypesImported} types, " +
+                      $"{item.SchemaVTablesMatched} vtables, {item.SchemaFunctionsBound} bound, " +
+                      $"{item.SchemaFunctionsSkipped} skipped, {item.SchemaFunctionConflicts} conflicts" +
+                      (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors ignored" : "") + "]" : "")
                 : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"));
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
-        bool nameFnPtrTables, string? importProtobufsDir, int cores)
+        bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
+        string schemaProject, int cores)
     {
         IReadOnlyList<BatchItem> results = [];
 
@@ -198,6 +247,9 @@ public static class Entrypoint
                     nameConVars,
                     nameFnPtrTables,
                     importProtobufsDir,
+                    importSchemaPath,
+                    hl2SdkPath,
+                    schemaProject,
                     onStarted: (path, worker) =>
                     {
                         var task = tasks[worker];
@@ -263,10 +315,20 @@ public static class Entrypoint
                                   output, not the .proto sources - a directory of .proto files
                                   alone has no compiled layout to read. Never applied to any
                                   address, so it can't mislabel real memory.
+              --import-schema <sdk.json>
+                                  Import the current binary project's schema classes/enums into
+                                  Local Types, detect RTTI vtables, and bind virtual-function this
+                                  parameters. Must match the binary platform/game build and be used
+                                  together with --hl2sdk. Only 64-bit PE/ELF inputs are supported.
+              --hl2sdk <dir>      HL2SDK root used by IDAClang while importing sdk.json.
+              --schema-project <auto|project>
+                                  Project roots to import. Default auto derives client/server/etc.
+                                  from the binary filename (including libNAME.so).
               -h, --help         Show this help.
 
             Example:
               s2atelier "bin/**/*.dll" "bin/**/*.so" --ida-path "C:\\IDA" --cores 4
+              s2atelier "bin/client.dll" --ida-path "C:\\IDA" --import-schema "sdk.json" --hl2sdk "D:\\Code\\hl2sdk"
             """);
     }
 }

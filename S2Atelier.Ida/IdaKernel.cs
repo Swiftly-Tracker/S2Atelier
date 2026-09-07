@@ -9,7 +9,10 @@ public sealed record IdaAnalysisResult(
     bool ConVarNamingApplicable = false, int ConVarNamingFound = 0,
     int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0,
     int FnPtrNamingFound = 0, int FnPtrNamingRenamed = 0,
-    bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0);
+    bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0,
+    bool SchemaImportApplicable = false, string? SchemaProject = null, int SchemaTypesImported = 0,
+    int SchemaVTablesMatched = 0, int SchemaFunctionsBound = 0, int SchemaFunctionsSkipped = 0,
+    int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0);
 
 public static unsafe class IdaKernel
 {
@@ -131,8 +134,15 @@ public static unsafe class IdaKernel
     private static readonly TimeSpan ReportInterval = TimeSpan.FromMilliseconds(60);
 
     public static IdaAnalysisResult Open(
+        string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables,
+        string? importProtobufsDir, Action<double, ulong>? onProgress)
+        => Open(path, save, patchPlt, nameConVars, nameFnPtrTables, importProtobufsDir,
+            importSchemaPath: null, hl2SdkPath: null, schemaProject: "auto", onProgress: onProgress);
+
+    public static IdaAnalysisResult Open(
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
-        string? importProtobufsDir = null, Action<double, ulong>? onProgress = null)
+        string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
+        string schemaProject = "auto", Action<double, ulong>? onProgress = null)
     {
         AssertOwner();
 
@@ -153,10 +163,15 @@ public static unsafe class IdaKernel
             Utf8.Free(native);
         }
 
+        bool completed = false;
         try
         {
             DriveAnalysis(onProgress);
             IdaNative.build_strlist();
+
+            var schemaResult = importSchemaPath != null && hl2SdkPath != null
+                ? SchemaImport.Run(full, importSchemaPath, hl2SdkPath, schemaProject)
+                : new SchemaImportResult(false);
 
             var pltResult = patchPlt
                 ? PltPatcher.Run()
@@ -174,7 +189,7 @@ public static unsafe class IdaKernel
                 ? ProtoImport.Run(importProtobufsDir)
                 : new ProtoImportResult(false, 0, 0, 0);
 
-            return new IdaAnalysisResult(
+            var result = new IdaAnalysisResult(
                 Functions: (int)IdaNative.get_func_qty(),
                 Segments: IdaNative.get_segm_qty(),
                 Strings: (int)IdaNative.get_strlist_qty(),
@@ -190,11 +205,22 @@ public static unsafe class IdaKernel
                 FnPtrNamingRenamed: fnPtrResult.Renamed,
                 ProtoImportApplicable: protoResult.Applicable,
                 ProtoTypesDefined: protoResult.TypesDefined,
-                ProtoImportErrors: protoResult.Errors);
+                ProtoImportErrors: protoResult.Errors,
+                SchemaImportApplicable: schemaResult.Applicable,
+                SchemaProject: schemaResult.Project,
+                SchemaTypesImported: schemaResult.TypesImported,
+                SchemaVTablesMatched: schemaResult.VTablesMatched,
+                SchemaFunctionsBound: schemaResult.FunctionsBound,
+                SchemaFunctionsSkipped: schemaResult.FunctionsSkipped,
+                SchemaFunctionConflicts: schemaResult.FunctionConflicts,
+                SchemaClangErrors: schemaResult.ClangErrors);
+            completed = true;
+            return result;
         }
         finally
         {
-            IdaNative.close_database(save ? (byte)1 : (byte)0);
+            // Exceptions leave the pipeline incomplete, so partial changes are never persisted.
+            IdaNative.close_database(save && completed ? (byte)1 : (byte)0);
         }
     }
 

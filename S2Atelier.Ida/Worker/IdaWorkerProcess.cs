@@ -34,14 +34,15 @@ public static class IdaWorkerProcess
             }
 
             RunJob(message.Path, message.Save, message.PatchPlt, message.NameConVars, message.NameFnPtrTables,
-                message.ImportProtobufsDir);
+                message.ImportProtobufsDir, message.ImportSchemaPath, message.Hl2SdkPath, message.SchemaProject);
         }
 
         return 0;
     }
 
     private static void RunJob(
-        string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables, string? importProtobufsDir)
+        string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables, string? importProtobufsDir,
+        string? importSchemaPath, string? hl2SdkPath, string schemaProject)
     {
         if (!File.Exists(path))
         {
@@ -52,6 +53,7 @@ public static class IdaWorkerProcess
         try
         {
             var result = IdaKernel.Open(path, save, patchPlt, nameConVars, nameFnPtrTables, importProtobufsDir,
+                importSchemaPath, hl2SdkPath, schemaProject,
                 (fraction, address) =>
                     Send(new WireMessage { Kind = WireKind.Progress, Fraction = fraction, Address = address }));
 
@@ -74,7 +76,19 @@ public static class IdaWorkerProcess
                 ProtoImportApplicable = result.ProtoImportApplicable,
                 ProtoTypesDefined = result.ProtoTypesDefined,
                 ProtoImportErrors = result.ProtoImportErrors,
+                SchemaImportApplicable = result.SchemaImportApplicable,
+                ImportedSchemaProject = result.SchemaProject,
+                SchemaTypesImported = result.SchemaTypesImported,
+                SchemaVTablesMatched = result.SchemaVTablesMatched,
+                SchemaFunctionsBound = result.SchemaFunctionsBound,
+                SchemaFunctionsSkipped = result.SchemaFunctionsSkipped,
+                SchemaFunctionConflicts = result.SchemaFunctionConflicts,
+                SchemaClangErrors = result.SchemaClangErrors,
             });
+        }
+        catch (SchemaImportException ex)
+        {
+            Send(new WireMessage { Kind = WireKind.Failed, Error = ex.Message, SchemaClangErrors = ex.ClangErrors });
         }
         catch (Exception ex)
         {

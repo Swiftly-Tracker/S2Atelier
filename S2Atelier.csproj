@@ -27,6 +27,7 @@
          pull in the referenced projects' own .cs files (they live in subdirectories here). -->
     <Compile Remove="S2Atelier.Ida\**\*.cs" />
     <Compile Remove="S2Atelier.Ida.Codegen\**\*.cs" />
+    <Compile Remove="S2Atelier.Tests\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
