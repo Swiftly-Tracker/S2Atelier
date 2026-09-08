@@ -128,7 +128,7 @@ public static unsafe class SchemaImport
         }
     }
 
-    private static SchemaTargetPlatform DetectTargetPlatform()
+    internal static SchemaTargetPlatform DetectTargetPlatform()
     {
         byte* buffer = stackalloc byte[256];
         nuint length = IdaNative.get_file_type_name(buffer, 256);
@@ -164,16 +164,19 @@ public static unsafe class SchemaImport
         throw new SchemaImportException("Cannot verify schema platform bitness because IDA found no functions.");
     }
 
-    private static void ConfigureClang(
+    internal static void ConfigureClang(
         string hl2SdkPath,
         SchemaTargetPlatform platform,
         bool skipLayoutAssertions)
     {
         string[] includeDirectories =
         [
+            hl2SdkPath,
             Path.Combine(hl2SdkPath, "public"),
+            Path.Combine(hl2SdkPath, "game"),
             Path.Combine(hl2SdkPath, "game", "shared"),
             Path.Combine(hl2SdkPath, "game", "server"),
+            Path.Combine(hl2SdkPath, "game", "client"),
             Path.Combine(hl2SdkPath, "public", "tier0"),
             Path.Combine(hl2SdkPath, "public", "tier1"),
             Path.Combine(hl2SdkPath, "public", "mathlib"),
@@ -239,7 +242,7 @@ public static unsafe class SchemaImport
         }
     }
 
-    private static int ParseHeader(string path, bool testOnly, bool printDiagnostics)
+    internal static int ParseHeader(string path, bool testOnly, bool printDiagnostics)
     {
         byte* parser = Utf8.Allocate("clang");
         byte* input = Utf8.Allocate(path);
@@ -258,6 +261,7 @@ public static unsafe class SchemaImport
             {
                 if (printDiagnostics)
                 {
+                    IdaPlatform.FlushNativeOutput();
                     IdaNative.enable_console_messages(0);
                     // Some IDAClang diagnostics do not terminate their last line. Keep the next
                     // JSON worker message from being appended to it and becoming unparsable.
@@ -296,7 +300,7 @@ public static unsafe class SchemaImport
         return count;
     }
 
-    private static void DeleteReplacedTypes(IEnumerable<string> names)
+    internal static void DeleteReplacedTypes(IEnumerable<string> names)
     {
         void* idati = IdaNative.get_idati();
         foreach (string name in names.OrderByDescending(x => x.Count(c => c == ':')).ThenBy(x => x, StringComparer.Ordinal))

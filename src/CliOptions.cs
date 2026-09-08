@@ -26,6 +26,8 @@ internal sealed class CliOptions
 
     public string? ImportSchemaPath { get; private set; }
 
+    public bool ImportInterfaces { get; private set; }
+
     public string? Hl2SdkPath { get; private set; }
 
     public string SchemaProject { get; private set; } = "auto";
@@ -103,6 +105,10 @@ internal sealed class CliOptions
                     options.ParseError = "--import-schema requires an sdk.json path.";
                     break;
 
+                case "--import-interfaces":
+                    options.ImportInterfaces = true;
+                    break;
+
                 case "--hl2sdk" when i + 1 < args.Length:
                     options.Hl2SdkPath = args[++i];
                     break;
@@ -135,39 +141,63 @@ internal sealed class CliOptions
     public bool ValidateSchemaOptions(out string? error)
     {
         error = null;
-        if ((ImportSchemaPath == null) != (Hl2SdkPath == null))
+        bool needsHl2Sdk = ImportSchemaPath != null || ImportInterfaces;
+        if (needsHl2Sdk && Hl2SdkPath == null)
         {
-            error = "--import-schema and --hl2sdk must be provided together.";
+            error = ImportSchemaPath != null && ImportInterfaces
+                ? "--import-schema and --import-interfaces require --hl2sdk."
+                : ImportInterfaces
+                    ? "--import-interfaces requires --hl2sdk."
+                    : "--import-schema requires --hl2sdk.";
             return false;
         }
-        if (ImportSchemaPath == null)
+        if (!needsHl2Sdk && Hl2SdkPath != null)
         {
-            if (!SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase))
-            {
-                error = "--schema-project requires --import-schema and --hl2sdk.";
-                return false;
-            }
+            error = "--hl2sdk requires --import-schema or --import-interfaces.";
+            return false;
+        }
+        if (ImportSchemaPath == null && !SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "--schema-project requires --import-schema.";
+            return false;
+        }
+        if (!needsHl2Sdk)
+        {
             return true;
         }
 
         try
         {
-            ImportSchemaPath = Path.GetFullPath(ImportSchemaPath);
             Hl2SdkPath = Path.GetFullPath(Hl2SdkPath!);
+            if (ImportSchemaPath != null)
+            {
+                ImportSchemaPath = Path.GetFullPath(ImportSchemaPath);
+            }
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
             error = $"Invalid schema/HL2SDK path: {ex.Message}";
             return false;
         }
-        if (!File.Exists(ImportSchemaPath))
-        {
-            error = $"Schema JSON does not exist: '{ImportSchemaPath}'.";
-            return false;
-        }
         if (!Directory.Exists(Hl2SdkPath))
         {
             error = $"HL2SDK directory does not exist: '{Hl2SdkPath}'.";
+            return false;
+        }
+        string interfacesHeader = Path.Combine(Hl2SdkPath, "public", "interfaces", "interfaces.h");
+        if (ImportInterfaces && !File.Exists(interfacesHeader))
+        {
+            error = $"HL2SDK is missing required interface catalog: '{interfacesHeader}'.";
+            return false;
+        }
+
+        if (ImportSchemaPath == null)
+        {
+            return true;
+        }
+        if (!File.Exists(ImportSchemaPath))
+        {
+            error = $"Schema JSON does not exist: '{ImportSchemaPath}'.";
             return false;
         }
         foreach (string required in new[]

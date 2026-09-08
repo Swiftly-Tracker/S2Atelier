@@ -16,6 +16,7 @@ internal sealed class WireMessage
     public string? ImportProtobufsDir { get; init; }
     public string? ImportSchemaPath { get; init; }
     public string? Hl2SdkPath { get; init; }
+    public bool ImportInterfaces { get; init; }
     public string SchemaProject { get; init; } = "auto";
 
     public string? Sdk { get; init; }
@@ -39,6 +40,13 @@ internal sealed class WireMessage
     public bool ProtoImportApplicable { get; init; }
     public int ProtoTypesDefined { get; init; }
     public int ProtoImportErrors { get; init; }
+    public bool InterfaceImportApplicable { get; init; }
+    public int InterfaceGlobalsFound { get; init; }
+    public int InterfaceGlobalsRenamed { get; init; }
+    public int InterfaceTypesApplied { get; init; }
+    public int InterfaceVTablesImported { get; init; }
+    public int InterfaceImportSkipped { get; init; }
+    public int InterfaceClangErrors { get; init; }
     public bool SchemaImportApplicable { get; init; }
     public string? ImportedSchemaProject { get; init; }
     public int SchemaTypesImported { get; init; }

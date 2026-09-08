@@ -10,6 +10,9 @@ public sealed record IdaAnalysisResult(
     int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0,
     int FnPtrNamingFound = 0, int FnPtrNamingRenamed = 0,
     bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0,
+    bool InterfaceImportApplicable = false, int InterfaceGlobalsFound = 0,
+    int InterfaceGlobalsRenamed = 0, int InterfaceTypesApplied = 0,
+    int InterfaceVTablesImported = 0, int InterfaceImportSkipped = 0, int InterfaceClangErrors = 0,
     bool SchemaImportApplicable = false, string? SchemaProject = null, int SchemaTypesImported = 0,
     int SchemaVTablesMatched = 0, int SchemaFunctionsBound = 0, int SchemaFunctionsSkipped = 0,
     int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0);
@@ -137,12 +140,13 @@ public static unsafe class IdaKernel
         string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables,
         string? importProtobufsDir, Action<double, ulong>? onProgress)
         => Open(path, save, patchPlt, nameConVars, nameFnPtrTables, importProtobufsDir,
-            importSchemaPath: null, hl2SdkPath: null, schemaProject: "auto", onProgress: onProgress);
+            importSchemaPath: null, hl2SdkPath: null, schemaProject: "auto", onProgress: onProgress,
+            importInterfaces: false);
 
     public static IdaAnalysisResult Open(
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
-        string schemaProject = "auto", Action<double, ulong>? onProgress = null)
+        string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false)
     {
         AssertOwner();
 
@@ -168,6 +172,10 @@ public static unsafe class IdaKernel
         {
             DriveAnalysis(onProgress);
             IdaNative.build_strlist();
+
+            var interfaceResult = importInterfaces && hl2SdkPath != null
+                ? ValveInterfaceImport.Run(full, hl2SdkPath)
+                : new ValveInterfaceImportResult(false);
 
             var schemaResult = importSchemaPath != null && hl2SdkPath != null
                 ? SchemaImport.Run(full, importSchemaPath, hl2SdkPath, schemaProject)
@@ -206,6 +214,13 @@ public static unsafe class IdaKernel
                 ProtoImportApplicable: protoResult.Applicable,
                 ProtoTypesDefined: protoResult.TypesDefined,
                 ProtoImportErrors: protoResult.Errors,
+                InterfaceImportApplicable: interfaceResult.Applicable,
+                InterfaceGlobalsFound: interfaceResult.GlobalsFound,
+                InterfaceGlobalsRenamed: interfaceResult.GlobalsRenamed,
+                InterfaceTypesApplied: interfaceResult.TypesApplied,
+                InterfaceVTablesImported: interfaceResult.VTablesImported,
+                InterfaceImportSkipped: interfaceResult.Skipped,
+                InterfaceClangErrors: interfaceResult.ClangErrors,
                 SchemaImportApplicable: schemaResult.Applicable,
                 SchemaProject: schemaResult.Project,
                 SchemaTypesImported: schemaResult.TypesImported,

@@ -81,6 +81,7 @@ public static class Entrypoint
                            $"SDK {options.SdkVersion}, save={!options.NoSave}, patch-plt={options.PatchPlt}, " +
                            $"name-convars={options.NameConVars}, name-fnptr-tables={options.NameFnPtrTables}, " +
                            $"import-protobufs={options.ImportProtobufsDir ?? "off"}, " +
+                           $"import-interfaces={options.ImportInterfaces}, " +
                            $"import-schema={options.ImportSchemaPath ?? "off"}, schema-project={options.SchemaProject}.");
 
         using var pool = new IdaWorkerPool(options.IdaPath, options.SdkVersion, options.Cores);
@@ -88,10 +89,10 @@ public static class Entrypoint
         var results = options.Progress
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.Cores)
+                options.SchemaProject, options.ImportInterfaces, options.Cores)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject);
+                options.SchemaProject, options.ImportInterfaces);
 
         Console.WriteLine();
 
@@ -121,6 +122,11 @@ public static class Entrypoint
         if (options.ImportProtobufsDir != null)
         {
             table.AddColumn("Protobufs");
+        }
+
+        if (options.ImportInterfaces)
+        {
+            table.AddColumn("Interfaces");
         }
 
         if (options.ImportSchemaPath != null)
@@ -166,6 +172,16 @@ public static class Entrypoint
                     : "n/a");
             }
 
+            if (options.ImportInterfaces)
+            {
+                row.Add(item.Succeeded && item.InterfaceImportApplicable
+                    ? $"{item.InterfaceGlobalsFound} found, {item.InterfaceGlobalsRenamed} renamed, " +
+                      $"{item.InterfaceTypesApplied} typed, {item.InterfaceVTablesImported} vtables" +
+                      (item.InterfaceImportSkipped > 0 ? $", {item.InterfaceImportSkipped} skipped" : "") +
+                      (item.InterfaceClangErrors > 0 ? $", {item.InterfaceClangErrors} clang errors" : "")
+                    : item.InterfaceClangErrors > 0 ? $"{item.InterfaceClangErrors} clang errors" : "n/a");
+            }
+
             if (options.ImportSchemaPath != null)
             {
                 row.Add(item.Succeeded && item.SchemaImportApplicable
@@ -190,7 +206,7 @@ public static class Entrypoint
     private static IReadOnlyList<BatchItem> RunPlain(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject)
+        string schemaProject, bool importInterfaces)
         => pool.RunBatch(
             paths,
             save,
@@ -211,17 +227,22 @@ public static class Entrypoint
                   (nameFnPtrTables ? $" [fnptrs: {item.FnPtrNamingFound} found, {item.FnPtrNamingRenamed} renamed]" : "") +
                   (importProtobufsDir != null && item.ProtoImportApplicable
                     ? $" [protobufs: {item.ProtoTypesDefined} types, {item.ProtoImportErrors} errors]" : "")
+                  + (importInterfaces && item.InterfaceImportApplicable
+                    ? $" [interfaces: {item.InterfaceGlobalsFound} found, {item.InterfaceGlobalsRenamed} renamed, " +
+                      $"{item.InterfaceTypesApplied} typed, {item.InterfaceVTablesImported} vtables, " +
+                      $"{item.InterfaceImportSkipped} skipped, {item.InterfaceClangErrors} clang errors]" : "")
                   + (importSchemaPath != null && item.SchemaImportApplicable
                     ? $" [schema {item.SchemaProject}: {item.SchemaTypesImported} types, " +
                       $"{item.SchemaVTablesMatched} vtables, {item.SchemaFunctionsBound} bound, " +
                       $"{item.SchemaFunctionsSkipped} skipped, {item.SchemaFunctionConflicts} conflicts" +
                       (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors ignored" : "") + "]" : "")
-                : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"));
+                : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"),
+            importInterfaces: importInterfaces);
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, int cores)
+        string schemaProject, bool importInterfaces, int cores)
     {
         IReadOnlyList<BatchItem> results = [];
 
@@ -266,7 +287,8 @@ public static class Entrypoint
                         tasks[worker].Value = 100;
                         tasks[worker].Description = item.Succeeded ? $"{name} [green]done[/]" : $"{name} [red]failed[/]";
                     },
-                    onProgress: (worker, fraction, _) => tasks[worker].Value = fraction * 100);
+                    onProgress: (worker, fraction, _) => tasks[worker].Value = fraction * 100,
+                    importInterfaces: importInterfaces);
             });
 
         return results;
@@ -320,7 +342,12 @@ public static class Entrypoint
                                   Local Types, detect RTTI vtables, and bind virtual-function this
                                   parameters. Must match the binary platform/game build and be used
                                   together with --hl2sdk. Only 64-bit PE/ELF inputs are supported.
-              --hl2sdk <dir>      HL2SDK root used by IDAClang while importing sdk.json.
+              --import-interfaces
+                                  Locate the validated ConnectInterfaces global table, rename its
+                                  automatic unk_/qword_ pointer slots to the official HL2SDK g_p...
+                                  names, apply interface pointer types, and import reliable virtual
+                                  tables through IDAClang. Requires --hl2sdk; sdk.json is not needed.
+              --hl2sdk <dir>      HL2SDK root used by --import-interfaces and/or --import-schema.
               --schema-project <auto|project>
                                   Project roots to import. Default auto derives client/server/etc.
                                   from the binary filename (including libNAME.so).
@@ -328,6 +355,7 @@ public static class Entrypoint
 
             Example:
               s2atelier "bin/**/*.dll" "bin/**/*.so" --ida-path "C:\\IDA" --cores 4
+              s2atelier "server.dll" --ida-path "D:\\Software\\ida93sp2" --import-interfaces --hl2sdk "D:\\Code\\hl2sdk"
               s2atelier "bin/client.dll" --ida-path "C:\\IDA" --import-schema "sdk.json" --hl2sdk "D:\\Code\\hl2sdk"
             """);
     }

@@ -10,4 +10,8 @@
     <NoWarn>$(NoWarn);CS8981</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="S2Atelier.Tests" />
+  </ItemGroup>
+
 </Project>

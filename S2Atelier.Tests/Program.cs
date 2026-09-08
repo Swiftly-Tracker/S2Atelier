@@ -1,6 +1,8 @@
 using S2Atelier.Ida;
 using S2Atelier.Ida.Generated;
 using S2Atelier.Ida.Schema;
+using S2Atelier.Ida.Worker;
+using S2Atelier;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -12,6 +14,14 @@ var tests = new (string Name, Action Run)[]
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),
     ("function binding statistics", TestFunctionBindingStatistics),
+    ("Valve interface catalog", TestValveInterfaceCatalog),
+    ("single Cvar slot with duplicate SDK rows", TestSingleCvarSlot),
+    ("known interface implementations", TestKnownInterfaceImplementations),
+    ("interface pointer comments", TestInterfacePointerComments),
+    ("gated implementation vftable integration", TestGatedImplementationIntegration),
+    ("Valve interface table detection", TestValveInterfaceTableDetection),
+    ("interface CLI combinations", TestInterfaceCliCombinations),
+    ("interface worker protocol", TestInterfaceWorkerProtocol),
     ("repository sdk smoke", TestRepositorySdk),
     ("gated IDA schema integration", TestGatedIdaIntegration),
 };
@@ -175,6 +185,445 @@ static void TestFunctionBindingStatistics()
     Equal("10:Base,30:Base", string.Join(',', editor.Attempts.Select(x => $"{x.Address}:{x.Owner}")));
 }
 
+static void TestValveInterfaceCatalog()
+{
+    const string interfaces = """
+        #define ENGINE_VERSION "Engine001"
+        DECLARE_TIER3_INTERFACE( IVEngineServer2, g_pEngineServer );
+        #define CVAR_VERSION "Cvar001"
+        DECLARE_TIER1_INTERFACE( ICvar, g_pCVar );
+        #define NAMESPACED_VERSION "Namespaced001"
+        DECLARE_TIER2_INTERFACE( valve::INamespaced, g_pNamespaced );
+        #define FORWARD_VERSION "Forward001"
+        DECLARE_TIER4_INTERFACE( IForwardOnly, g_pForwardOnly );
+        """;
+    const string source = """
+        ICvar *cvar, *g_pCVar;
+        InterfaceGlobals_t g_pInterfaceGlobals[] =
+        {
+            { ENGINE_VERSION, &g_pEngineServer },
+            { CVAR_VERSION, &cvar },
+            { CVAR_VERSION, &g_pCVar },
+            { NAMESPACED_VERSION, &g_pNamespaced },
+            { FORWARD_VERSION, &g_pForwardOnly },
+        };
+        """;
+    var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["public/interfaces/interfaces.h"] = interfaces,
+        ["public/eiface.h"] = "class IVEngineServer2;\nabstract_class IVEngineServer2 : public IBaseInterface { public: virtual int GetSteamUniverse() = 0; };",
+        ["public/icvar.h"] = "// class ICvar { };\nclass ICvar { public: virtual void Register() = 0; };",
+        ["game/shared/namespaced.h"] = "namespace valve { struct INamespaced { virtual void Run() = 0; }; }",
+        ["public/forward.h"] = "class IForwardOnly;",
+    };
+
+    ValveInterfaceCatalog catalog = ValveInterfaceCatalog.Parse(interfaces, source, headers);
+    Equal(5, catalog.Entries.Count);
+    ValveInterfaceDefinition engine = catalog.Entries.Single(x => x.Version == "Engine001");
+    Equal("IVEngineServer2", engine.ClassName);
+    Equal("g_pEngineServer", engine.GlobalName);
+    Equal("public/eiface.h", engine.DefinitionHeader);
+    Equal("game/shared/namespaced.h",
+        catalog.Entries.Single(x => x.ClassName == "valve::INamespaced").DefinitionHeader);
+    True(catalog.Entries.Single(x => x.ClassName == "IForwardOnly").DefinitionHeader == null);
+    Equal(5, catalog.TableSlots.Count);
+    Equal("cvar", catalog.TableSlots[1].Definition!.GlobalName);
+    Equal("ICvar", catalog.TableSlots[1].Definition!.ClassName);
+    Equal("public/icvar.h", catalog.TableSlots[1].Definition!.DefinitionHeader);
+    Equal("g_pCVar", catalog.TableSlots[2].Definition!.GlobalName);
+
+    foreach (string unverifiedDeclaration in new[]
+    {
+        "", "// ICvar *cvar, *g_pCVar;", "/* ICvar *cvar, *g_pCVar; */",
+        "IWrong *cvar;", "ICvar *cvar;\nIWrong *cvar;",
+        "void f() {\nICvar *cvar;\n}", "struct Other {\nICvar *cvar;\n};",
+    })
+    {
+        ValveInterfaceCatalog unverified = ValveInterfaceCatalog.Parse(interfaces,
+            source.Replace("ICvar *cvar, *g_pCVar;", unverifiedDeclaration), headers);
+        True(unverified.TableSlots[1].Definition == null);
+        Equal("g_pCVar", unverified.TableSlots[2].Definition!.GlobalName);
+    }
+
+    const string ambiguous = """
+        #define DUP_A "Duplicate001"
+        DECLARE_TIER1_INTERFACE( IA, g_pA );
+        #define DUP_B "Duplicate001"
+        DECLARE_TIER1_INTERFACE( IB, g_pB );
+        """;
+    ValveInterfaceCatalog ambiguousCatalog = ValveInterfaceCatalog.Parse(ambiguous, null,
+        new Dictionary<string, string> { ["public/interfaces/interfaces.h"] = ambiguous });
+    var ambiguousTable = new ValveInterfaceTable(0x9000,
+        [new ValveInterfaceTableRow(0x9000, "Duplicate001", 0xA000)]);
+    True(ValveInterfaceTableResolver.Resolve(ambiguousTable, ambiguousCatalog)[0].Definition == null);
+
+    string realSdk = Environment.GetEnvironmentVariable("HL2SDK_PATH") ?? @"D:\Code\hl2sdk";
+    if (Directory.Exists(realSdk))
+    {
+        ValveInterfaceCatalog realCatalog = ValveInterfaceCatalog.Load(realSdk);
+        ValveInterfaceDefinition realEngine = realCatalog.Entries
+            .Single(x => x.Version == "Source2EngineToServer001");
+        Equal("IVEngineServer2", realEngine.ClassName);
+        Equal("g_pEngineServer", realEngine.GlobalName);
+        True(realEngine.DefinitionHeader?.EndsWith("eiface.h", StringComparison.OrdinalIgnoreCase) == true);
+        ValveInterfaceDefinition[] cvars = realCatalog.TableSlots
+            .Where(x => x.Version == "VEngineCvar007").Select(x => x.Definition!).ToArray();
+        Equal("cvar,g_pCVar", string.Join(',', cvars.Select(x => x.GlobalName)));
+        True(cvars.All(x => x.ClassName == "ICvar"));
+        var actualSingleSlot = new ValveInterfaceTable(0x181934640,
+            [new ValveInterfaceTableRow(0x181934640, "VEngineCvar007", 0x1821D0E18)]);
+        ValveInterfaceDefinition actualCvar = ValveInterfaceTableResolver.Resolve(actualSingleSlot, realCatalog)
+            .Single().Definition!;
+        Equal("g_pCVar", actualCvar.GlobalName);
+        Equal("ICvar", actualCvar.ClassName);
+        Equal("public/icvar.h", actualCvar.DefinitionHeader);
+    }
+}
+
+static void TestSingleCvarSlot()
+{
+    const string interfaces = """
+        #define APP_VERSION "VApplication001"
+        DECLARE_TIER1_INTERFACE( IApplication, g_pApplication );
+        #define CVAR_INTERFACE_VERSION "VEngineCvar007"
+        DECLARE_TIER1_INTERFACE( ICVarWrong, wrongCvarName );
+        #define TOKEN_VERSION "VStringTokenSystem001"
+        DECLARE_TIER1_INTERFACE( ITokenSystem, g_pTokenSystem );
+        #define TEST_VERSION "TestScriptMgr001"
+        DECLARE_TIER1_INTERFACE( ITestScriptMgr, g_pTestScriptMgr );
+        """;
+    const string source = """
+        ICvar *cvar, *g_pCVar;
+        InterfaceGlobals_t g_pInterfaceGlobals[] = {
+            { APP_VERSION, &g_pApplication },
+            { CVAR_INTERFACE_VERSION, &cvar },
+            { CVAR_INTERFACE_VERSION, &g_pCVar },
+            { TOKEN_VERSION, &g_pTokenSystem },
+            { TEST_VERSION, &g_pTestScriptMgr },
+        };
+        """;
+    var headers = new Dictionary<string, string>
+    {
+        ["public/icvar.h"] = "abstract_class ICvar : public IAppSystem { public: virtual void Register() = 0; };",
+        // The known include should remain unambiguous even with another class match.
+        ["game/other.h"] = "class ICvar { };",
+    };
+    var memory = new FakeInterfaceMemory(
+        new Dictionary<ulong, ulong>
+        {
+            [0x5000] = 0x1000,
+            [0x5008] = 0x7000,
+            [0x5010] = 0x1100,
+            [0x5018] = 0x7010,
+            [0x5020] = 0x1200,
+            [0x5028] = 0x7020,
+            [0x5030] = 0x1300,
+            [0x5038] = 0x7030,
+        },
+        new Dictionary<ulong, IReadOnlyList<ulong>> { [0x1100] = [0x5010] },
+        new HashSet<ulong> { 0x7000, 0x7010, 0x7020, 0x7030 },
+        [(0x5000, 0x5040)]);
+    var strings = new Dictionary<ulong, string>
+    {
+        [0x1000] = "VApplication001",
+        [0x1100] = "VEngineCvar007",
+        [0x1200] = "VStringTokenSystem001",
+        [0x1300] = "TestScriptMgr001",
+    };
+    ValveInterfaceTable table = ValveInterfaceTableDetector.Detect(strings, memory).Single();
+    foreach (string? sdkSource in new[] { source, null })
+    {
+        ValveInterfaceCatalog catalog = ValveInterfaceCatalog.Parse(interfaces, sdkSource, headers);
+        ValveInterfaceBinding binding = ValveInterfaceTableResolver.Resolve(table, catalog)[1];
+        Equal(0x7010UL, binding.Row.GlobalAddress);
+        Equal("g_pCVar", binding.Definition!.GlobalName);
+        Equal("ICvar", binding.Definition.ClassName);
+        Equal("public/icvar.h", binding.Definition.DefinitionHeader);
+
+        if (sdkSource != null)
+        {
+            var twoSlots = new ValveInterfaceTable(0x5000,
+                [table.Rows[1], new ValveInterfaceTableRow(0x5040, "VEngineCvar007", 0x7040)]);
+            Equal("cvar,g_pCVar", string.Join(',', ValveInterfaceTableResolver.Resolve(twoSlots, catalog)
+                .Select(x => x.Definition!.GlobalName)));
+        }
+    }
+
+    // The mapping also survives a missing version/declaration in interfaces.h.
+    string missingDeclaration = interfaces.Replace(
+        "#define CVAR_INTERFACE_VERSION \"VEngineCvar007\"", "").Replace(
+        "DECLARE_TIER1_INTERFACE( ICVarWrong, wrongCvarName );", "");
+    ValveInterfaceCatalog fallback = ValveInterfaceCatalog.Parse(missingDeclaration, null, headers);
+    Equal("g_pCVar", ValveInterfaceTableResolver.Resolve(table, fallback)[1].Definition!.GlobalName);
+    True(fallback.Versions.Contains("VEngineCvar007"));
+    headers["public/icvar.h"] = "class ICvar;";
+    ValveInterfaceCatalog forward = ValveInterfaceCatalog.Parse(interfaces, source, headers);
+    True(forward.Entries.Single(x => x.Version == "VEngineCvar007").DefinitionHeader == null);
+}
+
+static void TestInterfacePointerComments()
+{
+    const string expected = "Valve interface \"VEngineCvar007\"";
+    Equal(expected, ValveInterfaceComments.Merge("", ["VEngineCvar007"]));
+    Equal(expected, ValveInterfaceComments.Merge(expected, ["VEngineCvar007", "VEngineCvar007"]));
+    Equal("User note\n" + expected, ValveInterfaceComments.Merge("User note", ["VEngineCvar007"]));
+    Equal("User note\r\n" + expected,
+        ValveInterfaceComments.Merge("User note\r\n", ["VEngineCvar007"]));
+    string multiple = ValveInterfaceComments.Merge("User note", ["Version002", "Version001", "Version002"]);
+    Equal("User note\nValve interface \"Version001\"\nValve interface \"Version002\"", multiple);
+    Equal(multiple, ValveInterfaceComments.Merge(multiple, ["Version002", "Version001"]));
+    Equal("Different user text", ValveInterfaceComments.Merge("Different user text", []));
+}
+
+static void TestKnownInterfaceImplementations()
+{
+    Equal(144, System.Runtime.InteropServices.Marshal.SizeOf<IdaUdtMember>());
+    Equal((nint)64, System.Runtime.InteropServices.Marshal.OffsetOf<IdaUdtMember>("Type"));
+    Equal((nint)132, System.Runtime.InteropServices.Marshal.OffsetOf<IdaUdtMember>("Flags"));
+    Equal(3, ValveInterfaceImplementations.Known.Count);
+    using TempDirectory temp = new();
+    foreach (ValveInterfaceImplementation mapping in ValveInterfaceImplementations.Known)
+    {
+        var definition = new ValveInterfaceDefinition("VERSION", mapping.Version,
+            mapping.InterfaceClass, "g_pTest", mapping.Header);
+        Equal(mapping, ValveInterfaceImplementations.Find(definition));
+        True(ValveInterfaceImplementations.SlotNameMatches(mapping, "Connect", "Connect"));
+        True(ValveInterfaceImplementations.SlotNameMatches(mapping, "dtr_" + mapping.InterfaceClass, "dtr_" + mapping.ClassName));
+        True(!ValveInterfaceImplementations.SlotNameMatches(mapping, "Connect", "Disconnect"));
+        True(!ValveInterfaceImplementations.SlotNameMatches(mapping, "dtr_" + mapping.InterfaceClass, "dtr_Unrelated"));
+        True(ValveInterfaceImplementations.Find(definition with { Version = "DifferentVersion" }) == null);
+        True(ValveInterfaceImplementations.Find(definition with { ClassName = "OtherInterface" }) == null);
+        True(ValveInterfaceImplementations.Find(definition with { DefinitionHeader = null }) == null);
+        string path = System.IO.Path.Combine(temp.Path, "implementation.hpp");
+        ValveInterfaceImport.WriteHeader(path, [mapping.Header], [definition], includeImplementations: true);
+        string generated = File.ReadAllText(path);
+        Contains(generated, $"#include \"{mapping.Header}\"");
+        Contains(generated, $"extern {mapping.ClassName} *__s2atelier_implementation_");
+        Contains(generated, $"static_assert(sizeof({mapping.ClassName}) >= sizeof({mapping.InterfaceClass}));");
+        ValveInterfaceImport.WriteHeader(path, [mapping.Header], [definition]);
+        True(!File.ReadAllText(path).Contains("__s2atelier_implementation_", StringComparison.Ordinal));
+    }
+}
+
+static unsafe void TestGatedImplementationIntegration()
+{
+    string? binary = Environment.GetEnvironmentVariable("S2ATELIER_TEST_INTERFACES");
+    if (string.IsNullOrWhiteSpace(binary)) return;
+    string idaPath = Environment.GetEnvironmentVariable("IDA_PATH")
+        ?? throw new InvalidOperationException("IDA_PATH is required for the implementation integration test.");
+    string sdk = Environment.GetEnvironmentVariable("HL2SDK_PATH") ?? @"D:\Code\hl2sdk";
+    True(IdaKernel.TryInitialize(idaPath, IdaSdkVersion.Auto, out string? error), error);
+    byte* native = Utf8.Allocate(binary);
+    try { Equal(0, IdaNative.open_database(native, 0, null)); }
+    finally { Utf8.Free(native); }
+    try
+    {
+        IdaNative.auto_wait();
+        IdaNative.build_strlist();
+        for (int pass = 0; pass < 2; pass++)
+        {
+            ValveInterfaceImportResult result = ValveInterfaceImport.Run(binary, sdk);
+            True(result.Applicable);
+            Equal(0, result.ClangErrors);
+            foreach (ValveInterfaceImplementation mapping in ValveInterfaceImplementations.Known)
+            {
+                True(ValveImplementationTypes.Validate(mapping, out string reason), $"{mapping.ClassName}: {reason}");
+                string global = mapping.InterfaceClass switch
+                {
+                    "ICvar" => "g_pCVar",
+                    "ISchemaSystem" => "g_pSchemaSystem",
+                    _ => "g_pHostStateMgr",
+                };
+                byte* name = Utf8.Allocate(global);
+                TypeInfo applied = default, implementation = default;
+                try
+                {
+                    ulong address = IdaNative.get_name_ea(ulong.MaxValue, name);
+                    True(address != ulong.MaxValue, $"Missing {global}");
+                    True(IdaNative.get_tinfo(&applied, address) != 0);
+                    True(ValveImplementationTypes.Load(mapping.ClassName, out implementation));
+                    ulong pointed = (ulong)IdaNative.get_tinfo_property(applied.Typid, 9);
+                    True(IdaNative.compare_tinfo(pointed, implementation.Typid, 0) != 0, $"{global} is not {mapping.ClassName} *");
+                    var comment = new QString();
+                    try
+                    {
+                        True(IdaNative.get_cmt(&comment, address, 1) > 0);
+                        Equal(1, Count(comment.Read(), $"Valve interface \"{mapping.Version}\""));
+                    }
+                    finally { comment.Dispose(); }
+                }
+                finally { Utf8.Free(name); applied.Dispose(); implementation.Dispose(); }
+            }
+            TypeInfo host = default;
+            try
+            {
+                True(ValveImplementationTypes.Load("CHostStateMgr", out host));
+                True(ValveImplementationTypes.ReadMember(host.Typid, 1, out IdaUdtMember secondaryBase));
+                try
+                {
+                    True(secondaryBase.Offset > 0 && (secondaryBase.Flags & 0x20) != 0);
+                    True(ValveImplementationTypes.ReadMember(host.Typid, secondaryBase.Offset,
+                        out IdaUdtMember secondary, vftable: true));
+                    try
+                    {
+                        Equal(secondaryBase.Offset, secondary.Offset);
+                        Equal(64UL, secondary.Size);
+                        True((secondary.Flags & 0x100) != 0);
+                    }
+                    finally { secondary.Dispose(); }
+                }
+                finally { secondaryBase.Dispose(); }
+            }
+            finally { host.Dispose(); }
+        }
+    }
+    finally { IdaNative.close_database(0); }
+}
+
+static void TestValveInterfaceTableDetection()
+{
+    string[] versions = ["Engine001", "Cvar001", "Namespaced001", "Forward001"];
+    var strings = new Dictionary<ulong, string>
+    {
+        [0x1000] = versions[0],
+        [0x1100] = versions[1],
+        [0x1200] = versions[2],
+        [0x1300] = versions[3],
+    };
+    var pointers = new Dictionary<ulong, ulong>
+    {
+        [0x5000] = 0x1000,
+        [0x5008] = 0x7000,
+        [0x5010] = 0x1100,
+        [0x5018] = 0x7010,
+        [0x5020] = 0x1100,
+        [0x5028] = 0x7020,
+        [0x5030] = 0x1200,
+        [0x5038] = 0x7030,
+        [0x5040] = 0x1300,
+        [0x5048] = 0x7040,
+        // An ordinary isolated reference and a four-row-looking sequence with one read-only target.
+        [0x6000] = 0x1000,
+        [0x6008] = 0x7100,
+        [0x6100] = 0x1000,
+        [0x6108] = 0x7200,
+        [0x6110] = 0x1100,
+        [0x6118] = 0x7210,
+        [0x6120] = 0x1200,
+        [0x6128] = 0x7220,
+        [0x6130] = 0x1300,
+        [0x6138] = 0x7230,
+    };
+    var references = new Dictionary<ulong, IReadOnlyList<ulong>>
+    {
+        [0x1000] = [0x5000, 0x6000, 0x6100],
+        [0x1100] = [0x5010, 0x5020, 0x6110],
+        [0x1200] = [0x5030, 0x6120],
+        [0x1300] = [0x5040, 0x6130],
+    };
+    var writable = new HashSet<ulong>
+        { 0x7000, 0x7010, 0x7020, 0x7030, 0x7040, 0x7100, 0x7200, 0x7210, 0x7230 };
+    var memory = new FakeInterfaceMemory(pointers, references, writable,
+        [(0x5000, 0x5050), (0x6000, 0x6010), (0x6100, 0x6140)]);
+
+    IReadOnlyList<ValveInterfaceTable> tables = ValveInterfaceTableDetector.Detect(strings, memory);
+    Equal(1, tables.Count);
+    Equal(5, tables[0].Rows.Count);
+    Equal(0x5000UL, tables[0].Address);
+
+    const string interfaces = """
+        #define ENGINE_VERSION "Engine001"
+        DECLARE_TIER3_INTERFACE( IVEngineServer2, g_pEngineServer );
+        #define CVAR_VERSION "Cvar001"
+        DECLARE_TIER1_INTERFACE( ICvar, g_pCVar );
+        #define NAMESPACED_VERSION "Namespaced001"
+        DECLARE_TIER2_INTERFACE( INamespaced, g_pNamespaced );
+        #define FORWARD_VERSION "Forward001"
+        DECLARE_TIER4_INTERFACE( IForwardOnly, g_pForwardOnly );
+        """;
+    const string source = """
+        ICvar *cvar, *g_pCVar;
+        InterfaceGlobals_t g_pInterfaceGlobals[] = {
+          { ENGINE_VERSION, &g_pEngineServer }, { CVAR_VERSION, &cvar },
+          { CVAR_VERSION, &g_pCVar }, { NAMESPACED_VERSION, &g_pNamespaced },
+          { FORWARD_VERSION, &g_pForwardOnly },
+        };
+        """;
+    ValveInterfaceCatalog catalog = ValveInterfaceCatalog.Parse(interfaces, source,
+        new Dictionary<string, string> { ["public/interfaces/interfaces.h"] = interfaces });
+    IReadOnlyList<ValveInterfaceBinding> bindings = ValveInterfaceTableResolver.Resolve(tables[0], catalog);
+    Equal("g_pEngineServer", bindings[0].Definition!.GlobalName);
+    Equal("cvar", bindings[1].Definition!.GlobalName);
+    Equal("g_pCVar", bindings[2].Definition!.GlobalName);
+    foreach (ValveInterfaceTableRow[] cvarRows in new[]
+    {
+        new[] { tables[0].Rows[1] },
+        new[] { tables[0].Rows[1], tables[0].Rows[2], tables[0].Rows[1] },
+    })
+    {
+        var mismatched = new ValveInterfaceTable(0x5000, cvarRows);
+        True(ValveInterfaceTableResolver.Resolve(mismatched, catalog).All(x => x.Definition == null));
+    }
+    True(ValveInterfaceNaming.CanReplace("qword_180001000"));
+    True(ValveInterfaceNaming.CanReplace("unk_7FF000"));
+    True(!ValveInterfaceNaming.CanReplace("importantGlobal"));
+}
+
+static void TestInterfaceCliCombinations()
+{
+    CliOptions missingSdk = CliOptions.Parse(["server.dll", "--import-interfaces"]);
+    True(missingSdk.ImportInterfaces);
+    True(!missingSdk.ValidateSchemaOptions(out string? missingError));
+    Contains(missingError!, "requires --hl2sdk");
+
+    using TempDirectory sdk = new();
+    Directory.CreateDirectory(System.IO.Path.Combine(sdk.Path, "public", "interfaces"));
+    File.WriteAllText(System.IO.Path.Combine(sdk.Path, "public", "interfaces", "interfaces.h"), "// fixture");
+
+    CliOptions standalone = CliOptions.Parse(["server.dll", "--hl2sdk", sdk.Path]);
+    True(!standalone.ValidateSchemaOptions(out string? standaloneError));
+    Contains(standaloneError!, "requires --import-schema or --import-interfaces");
+
+    CliOptions interfacesOnly = CliOptions.Parse(
+        ["server.dll", "--import-interfaces", "--hl2sdk", sdk.Path]);
+    True(interfacesOnly.ValidateSchemaOptions(out string? validError), validError);
+    True(interfacesOnly.ImportSchemaPath == null);
+}
+
+static void TestInterfaceWorkerProtocol()
+{
+    var job = new WireMessage
+    {
+        Kind = WireKind.Job,
+        Path = "server.dll",
+        ImportInterfaces = true,
+        Hl2SdkPath = @"D:\Code\hl2sdk",
+    };
+    WireMessage jobRoundTrip = WorkerProtocol.Read(WorkerProtocol.Write(job))!;
+    True(jobRoundTrip.ImportInterfaces);
+    Equal(@"D:\Code\hl2sdk", jobRoundTrip.Hl2SdkPath);
+
+    var done = new WireMessage
+    {
+        Kind = WireKind.Done,
+        InterfaceImportApplicable = true,
+        InterfaceGlobalsFound = 114,
+        InterfaceGlobalsRenamed = 113,
+        InterfaceTypesApplied = 113,
+        InterfaceVTablesImported = 16,
+        InterfaceImportSkipped = 4,
+        InterfaceClangErrors = 3,
+    };
+    WireMessage doneRoundTrip = WorkerProtocol.Read(WorkerProtocol.Write(done))!;
+    True(doneRoundTrip.InterfaceImportApplicable);
+    Equal(114, doneRoundTrip.InterfaceGlobalsFound);
+    Equal(113, doneRoundTrip.InterfaceGlobalsRenamed);
+    Equal(113, doneRoundTrip.InterfaceTypesApplied);
+    Equal(16, doneRoundTrip.InterfaceVTablesImported);
+    Equal(4, doneRoundTrip.InterfaceImportSkipped);
+    Equal(3, doneRoundTrip.InterfaceClangErrors);
+}
+
 static void TestRepositorySdk()
 {
     string path = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory,
@@ -215,7 +664,10 @@ static void TestGatedIdaIntegration()
     foreach (string binary in binaries.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!))
     {
         IdaAnalysisResult result = IdaKernel.Open(binary, save: false, importSchemaPath: sdkJson,
-            hl2SdkPath: hl2Sdk, schemaProject: "auto");
+            hl2SdkPath: hl2Sdk, schemaProject: "auto", importInterfaces: true);
+        True(result.InterfaceImportApplicable);
+        True(result.InterfaceGlobalsFound >= 4);
+        True(result.InterfaceVTablesImported > 0);
         True(result.SchemaImportApplicable);
         Equal(0, result.SchemaClangErrors);
         True(result.SchemaTypesImported > 0);
@@ -243,9 +695,9 @@ static void Contains(string value, string needle)
     }
 }
 
-static void True(bool value)
+static void True(bool value, string? message = null)
 {
-    if (!value) throw new Exception("Expected true.");
+    if (!value) throw new Exception(message ?? "Expected true.");
 }
 
 static void Equal<T>(T expected, T actual)
@@ -325,6 +777,16 @@ sealed class TempJson : IDisposable
     public void Dispose() => File.Delete(Path);
 }
 
+sealed class TempDirectory : IDisposable
+{
+    public string Path { get; } = System.IO.Path.Combine(
+        System.IO.Path.GetTempPath(), $"s2atelier-test-{Guid.NewGuid():N}");
+
+    public TempDirectory() => Directory.CreateDirectory(Path);
+
+    public void Dispose() => Directory.Delete(Path, recursive: true);
+}
+
 sealed class FakeVTableMemory(
     IReadOnlyDictionary<ulong, ulong> pointers,
     IReadOnlySet<ulong> functions,
@@ -344,4 +806,21 @@ sealed class FakeFunctionTypeEditor(IReadOnlySet<ulong> failures) : IVirtualFunc
         Attempts.Add((address, owner));
         return !failures.Contains(address);
     }
+}
+
+sealed class FakeInterfaceMemory(
+    IReadOnlyDictionary<ulong, ulong> pointers,
+    IReadOnlyDictionary<ulong, IReadOnlyList<ulong>> references,
+    IReadOnlySet<ulong> writable,
+    IReadOnlyList<(ulong Start, ulong End)> mappedRanges) : IValveInterfaceMemory
+{
+    public ulong ReadPointer(ulong address) => pointers.TryGetValue(address, out ulong value) ? value : 0;
+
+    public bool IsMapped(ulong address)
+        => writable.Contains(address) || mappedRanges.Any(range => address >= range.Start && address < range.End);
+
+    public bool IsWritable(ulong address) => writable.Contains(address);
+
+    public IEnumerable<ulong> DataReferencesTo(ulong address)
+        => references.TryGetValue(address, out IReadOnlyList<ulong>? result) ? result : [];
 }

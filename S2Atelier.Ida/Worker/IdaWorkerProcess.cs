@@ -34,7 +34,8 @@ public static class IdaWorkerProcess
             }
 
             RunJob(message.Path, message.Save, message.PatchPlt, message.NameConVars, message.NameFnPtrTables,
-                message.ImportProtobufsDir, message.ImportSchemaPath, message.Hl2SdkPath, message.SchemaProject);
+                message.ImportProtobufsDir, message.ImportSchemaPath, message.Hl2SdkPath, message.SchemaProject,
+                message.ImportInterfaces);
         }
 
         return 0;
@@ -42,7 +43,7 @@ public static class IdaWorkerProcess
 
     private static void RunJob(
         string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables, string? importProtobufsDir,
-        string? importSchemaPath, string? hl2SdkPath, string schemaProject)
+        string? importSchemaPath, string? hl2SdkPath, string schemaProject, bool importInterfaces)
     {
         if (!File.Exists(path))
         {
@@ -55,7 +56,8 @@ public static class IdaWorkerProcess
             var result = IdaKernel.Open(path, save, patchPlt, nameConVars, nameFnPtrTables, importProtobufsDir,
                 importSchemaPath, hl2SdkPath, schemaProject,
                 (fraction, address) =>
-                    Send(new WireMessage { Kind = WireKind.Progress, Fraction = fraction, Address = address }));
+                    Send(new WireMessage { Kind = WireKind.Progress, Fraction = fraction, Address = address }),
+                importInterfaces);
 
             Send(new WireMessage
             {
@@ -76,6 +78,13 @@ public static class IdaWorkerProcess
                 ProtoImportApplicable = result.ProtoImportApplicable,
                 ProtoTypesDefined = result.ProtoTypesDefined,
                 ProtoImportErrors = result.ProtoImportErrors,
+                InterfaceImportApplicable = result.InterfaceImportApplicable,
+                InterfaceGlobalsFound = result.InterfaceGlobalsFound,
+                InterfaceGlobalsRenamed = result.InterfaceGlobalsRenamed,
+                InterfaceTypesApplied = result.InterfaceTypesApplied,
+                InterfaceVTablesImported = result.InterfaceVTablesImported,
+                InterfaceImportSkipped = result.InterfaceImportSkipped,
+                InterfaceClangErrors = result.InterfaceClangErrors,
                 SchemaImportApplicable = result.SchemaImportApplicable,
                 ImportedSchemaProject = result.SchemaProject,
                 SchemaTypesImported = result.SchemaTypesImported,
@@ -89,6 +98,10 @@ public static class IdaWorkerProcess
         catch (SchemaImportException ex)
         {
             Send(new WireMessage { Kind = WireKind.Failed, Error = ex.Message, SchemaClangErrors = ex.ClangErrors });
+        }
+        catch (ValveInterfaceImportException ex)
+        {
+            Send(new WireMessage { Kind = WireKind.Failed, Error = ex.Message, InterfaceClangErrors = ex.ClangErrors });
         }
         catch (Exception ex)
         {
