@@ -305,9 +305,74 @@ public interface IVTableMemory
     ulong ReadPointer(ulong address);
     bool IsMapped(ulong address);
     bool IsFunctionStart(ulong address);
+    bool CanReadPointer(ulong address) => IsMapped(address) && address <= ulong.MaxValue - 7 && IsMapped(address + 7);
 }
 
-public sealed record VTableSlice(long OffsetToTop, IReadOnlyList<ulong> Functions);
+public sealed record VTableSlice(long OffsetToTop, IReadOnlyList<ulong> Functions,
+    ulong AddressPoint = 0, bool Truncated = false);
+
+public sealed record SchemaVTable(string ClassName, ulong AddressPoint, ulong? ObjectOffset,
+    string? ThisType, IReadOnlyList<string> BasePath, IReadOnlyList<ulong> Functions,
+    string? ExistingTypeName = null, bool Truncated = false);
+
+public sealed record VTableTypeEditResult(bool Completed, bool Bound, int UnknownSlots = 0, bool Conflict = false);
+public sealed record VTableTypeSummary(int Completed, int Bound, int UnknownSlots, int Conflicts);
+
+public interface IVTableTypeEditor
+{
+    VTableTypeEditResult Complete(SchemaVTable table, string typeName);
+}
+
+public static partial class VTableTypeBinder
+{
+    public static IEnumerable<(SchemaVTable Table, string Name)> AssignNames(IEnumerable<SchemaVTable> tables)
+    {
+        SchemaVTable[] ordered = tables.OrderBy(x => x.ClassName, StringComparer.Ordinal)
+            .ThenBy(x => x.AddressPoint).DistinctBy(x => x.AddressPoint).ToArray();
+        var reserved = ordered.Where(x => x.ExistingTypeName != null)
+            .GroupBy(x => x.ExistingTypeName!, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.First().AddressPoint, StringComparer.Ordinal);
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (SchemaVTable table in ordered)
+        {
+            string stem = table.ObjectOffset == 0 ? table.ClassName
+                // IDA's inherited-vptr lookup requires the SDK's %04X offset spelling.
+                : table.ObjectOffset is ulong offset ? $"{table.ClassName}_{offset:X4}"
+                : $"{table.ClassName}_ea_{table.AddressPoint:X}";
+            string name = table.ExistingTypeName ?? stem + "_vtbl";
+            if (used.Contains(name) || reserved.TryGetValue(name, out ulong address) && address != table.AddressPoint)
+            {
+                name = $"{stem}_ea_{table.AddressPoint:X}_vtbl";
+            }
+            used.Add(name);
+            yield return (table, name);
+        }
+    }
+
+    public static VTableTypeSummary Bind(IEnumerable<SchemaVTable> tables, IVTableTypeEditor editor)
+    {
+        int completed = 0, bound = 0, unknown = 0, conflicts = 0;
+        foreach (var (table, name) in AssignNames(tables))
+        {
+            VTableTypeEditResult result = editor.Complete(table, name);
+            completed += result.Completed ? 1 : 0;
+            bound += result.Bound ? 1 : 0;
+            unknown += result.UnknownSlots;
+            conflicts += result.Conflict ? 1 : 0;
+        }
+        return new(completed, bound, unknown, conflicts);
+    }
+
+    public static string SlotName(string? name, int index)
+    {
+        string cleaned = InvalidName().Replace(name ?? "", "_").Trim('_');
+        if (cleaned.Length > 96) cleaned = cleaned[..96];
+        return cleaned.Length == 0 ? $"slot_{index}" : $"vfn_{cleaned}_{index}";
+    }
+
+    [GeneratedRegex("[^A-Za-z0-9_]+", RegexOptions.CultureInvariant)]
+    private static partial Regex InvalidName();
+}
 
 public interface IVirtualFunctionTypeEditor
 {
@@ -359,13 +424,17 @@ public static class VTableFunctionBinder
 
 public static class VTableEntryScanner
 {
-    public static IReadOnlyList<ulong> ScanMsvc(IVTableMemory memory, ulong start, int maximumEntries = 1024)
+    public static IReadOnlyList<ulong> ScanMsvc(IVTableMemory memory, ulong start, int maximumEntries = 1024,
+        ulong? endExclusive = null, bool trustedExtent = false)
     {
         var result = new List<ulong>();
         for (int i = 0; i < maximumEntries; i++)
         {
-            ulong target = memory.ReadPointer(start + (ulong)(i * 8));
-            if (!memory.IsFunctionStart(target))
+            if (start > ulong.MaxValue - (ulong)(i * 8)) break;
+            ulong slot = start + (ulong)(i * 8);
+            if (!CanRead(memory, slot, endExclusive)) break;
+            ulong target = memory.ReadPointer(slot);
+            if (!memory.IsFunctionStart(target) && !(trustedExtent && endExclusive.HasValue))
             {
                 break;
             }
@@ -378,15 +447,24 @@ public static class VTableEntryScanner
         => ScanItaniumTables(memory, symbol, maximumEntries).SelectMany(x => x.Functions).ToArray();
 
     public static IReadOnlyList<VTableSlice> ScanItaniumTables(
-        IVTableMemory memory, ulong symbol, int maximumEntries = 1024)
+        IVTableMemory memory, ulong symbol, int maximumEntries = 1024, ulong? endExclusive = null,
+        bool trustedExtent = false)
     {
         var result = new List<VTableSlice>();
+        if (!CanRead(memory, symbol, endExclusive)) return result;
         bool pointsAtFunction = memory.IsFunctionStart(memory.ReadPointer(symbol));
         long offsetToTop = pointsAtFunction ? 0 : unchecked((long)memory.ReadPointer(symbol));
+        if (!pointsAtFunction && (offsetToTop != 0 || symbol > ulong.MaxValue - 16 ||
+            !CanRead(memory, symbol + 8, endExclusive))) return result;
+        ulong rtti = pointsAtFunction ? 0 : memory.ReadPointer(symbol + 8);
+        if (!pointsAtFunction && rtti != 0 && !memory.IsMapped(rtti)) return result;
         ulong cursor = pointsAtFunction ? symbol : symbol + 16;
+        ulong addressPoint = cursor;
         var current = new List<ulong>();
-        for (int i = 0; i < maximumEntries; i++)
+        int steps = 0;
+        for (; steps < maximumEntries; steps++)
         {
+            if (!CanRead(memory, cursor, endExclusive)) break;
             ulong value = memory.ReadPointer(cursor);
             if (memory.IsFunctionStart(value))
             {
@@ -396,26 +474,39 @@ public static class VTableEntryScanner
             }
 
             long nextOffsetToTop = unchecked((long)value);
-            bool plausibleOffset = nextOffsetToTop <= 0 && nextOffsetToTop >= -0x100000;
-            ulong possibleFunction = memory.ReadPointer(cursor + 16);
-            if (plausibleOffset && memory.IsMapped(memory.ReadPointer(cursor + 8)) &&
-                memory.IsFunctionStart(possibleFunction))
+            // A zero offset starts a new complete object's group, never a secondary table.
+            bool plausibleOffset = nextOffsetToTop < 0 && nextOffsetToTop >= -0x100000;
+            if (plausibleOffset && cursor <= ulong.MaxValue - 16 &&
+                CanRead(memory, cursor + 8, endExclusive) && CanRead(memory, cursor + 16, endExclusive) &&
+                memory.ReadPointer(cursor + 8) == rtti && memory.IsFunctionStart(memory.ReadPointer(cursor + 16)))
             {
                 if (current.Count > 0)
                 {
-                    result.Add(new VTableSlice(offsetToTop, current.ToArray()));
+                    result.Add(new VTableSlice(offsetToTop, current.ToArray(), addressPoint));
                 }
                 current.Clear();
                 offsetToTop = nextOffsetToTop;
                 cursor += 16;
+                addressPoint = cursor;
+                continue;
+            }
+            if (trustedExtent && endExclusive.HasValue)
+            {
+                current.Add(value);
+                cursor += 8;
                 continue;
             }
             break;
         }
         if (current.Count > 0)
         {
-            result.Add(new VTableSlice(offsetToTop, current.ToArray()));
+            result.Add(new VTableSlice(offsetToTop, current.ToArray(), addressPoint,
+                steps == maximumEntries && CanRead(memory, cursor, endExclusive)));
         }
         return result;
     }
+
+    private static bool CanRead(IVTableMemory memory, ulong slot, ulong? end)
+        => slot <= ulong.MaxValue - 8 && (!end.HasValue || slot < end && end.Value - slot >= 8)
+           && memory.CanReadPointer(slot);
 }

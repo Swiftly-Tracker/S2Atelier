@@ -93,6 +93,10 @@ public static class IdaWorkerProcess
                 SchemaFunctionsSkipped = result.SchemaFunctionsSkipped,
                 SchemaFunctionConflicts = result.SchemaFunctionConflicts,
                 SchemaClangErrors = result.SchemaClangErrors,
+                SchemaVTableTypesCompleted = result.SchemaVTableTypesCompleted,
+                SchemaVTableAddressesBound = result.SchemaVTableAddressesBound,
+                SchemaVTableUnknownSlots = result.SchemaVTableUnknownSlots,
+                SchemaVTableConflicts = result.SchemaVTableConflicts,
             });
         }
         catch (SchemaImportException ex)

@@ -17,7 +17,8 @@ public sealed record BatchItem(
     int InterfaceVTablesImported = 0, int InterfaceImportSkipped = 0, int InterfaceClangErrors = 0,
     bool SchemaImportApplicable = false, string? SchemaProject = null, int SchemaTypesImported = 0,
     int SchemaVTablesMatched = 0, int SchemaFunctionsBound = 0, int SchemaFunctionsSkipped = 0,
-    int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0);
+    int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0,
+    int SchemaVTableTypesCompleted = 0, int SchemaVTableAddressesBound = 0, int SchemaVTableUnknownSlots = 0, int SchemaVTableConflicts = 0);
 
 public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) : IDisposable
 {
@@ -203,7 +204,11 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                             SchemaFunctionsBound: message.SchemaFunctionsBound,
                             SchemaFunctionsSkipped: message.SchemaFunctionsSkipped,
                             SchemaFunctionConflicts: message.SchemaFunctionConflicts,
-                            SchemaClangErrors: message.SchemaClangErrors);
+                            SchemaClangErrors: message.SchemaClangErrors,
+                            SchemaVTableTypesCompleted: message.SchemaVTableTypesCompleted,
+                            SchemaVTableAddressesBound: message.SchemaVTableAddressesBound,
+                            SchemaVTableUnknownSlots: message.SchemaVTableUnknownSlots,
+                            SchemaVTableConflicts: message.SchemaVTableConflicts);
                     }
 
                     if (message.Kind == WireKind.Failed)

@@ -185,7 +185,7 @@ public static class Entrypoint
             if (options.ImportSchemaPath != null)
             {
                 row.Add(item.Succeeded && item.SchemaImportApplicable
-                    ? $"{item.SchemaProject}: {item.SchemaTypesImported} types, {item.SchemaVTablesMatched} vtables, " +
+                    ? $"{item.SchemaProject}: {item.SchemaTypesImported} types, {item.SchemaVTablesMatched} vtables found, {item.SchemaVTableTypesCompleted} completed, {item.SchemaVTableAddressesBound} address-bound, {item.SchemaVTableUnknownSlots} unknown slots, {item.SchemaVTableConflicts} vtable conflicts, " +
                       $"{item.SchemaFunctionsBound} bound/{item.SchemaFunctionsSkipped} skipped/" +
                       $"{item.SchemaFunctionConflicts} conflicts" +
                       (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors (ignored)" : "")
@@ -233,7 +233,7 @@ public static class Entrypoint
                       $"{item.InterfaceImportSkipped} skipped, {item.InterfaceClangErrors} clang errors]" : "")
                   + (importSchemaPath != null && item.SchemaImportApplicable
                     ? $" [schema {item.SchemaProject}: {item.SchemaTypesImported} types, " +
-                      $"{item.SchemaVTablesMatched} vtables, {item.SchemaFunctionsBound} bound, " +
+                      $"{item.SchemaVTablesMatched} vtables found, {item.SchemaVTableTypesCompleted} completed, {item.SchemaVTableAddressesBound} address-bound, {item.SchemaVTableUnknownSlots} unknown slots, {item.SchemaVTableConflicts} vtable conflicts, {item.SchemaFunctionsBound} bound, " +
                       $"{item.SchemaFunctionsSkipped} skipped, {item.SchemaFunctionConflicts} conflicts" +
                       (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors ignored" : "") + "]" : "")
                 : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"),

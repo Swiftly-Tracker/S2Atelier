@@ -11,6 +11,9 @@ var tests = new (string Name, Action Run)[]
     ("golden header features", TestHeader),
     ("vtable ABI names", TestVTableNames),
     ("vtable table boundaries", TestVTableBoundaries),
+    ("vtable bounded unknown slots", TestVTableUnknownSlots),
+    ("vtable naming and partial failures", TestVTableTypes),
+    ("gated native schema vtable types", TestNativeSchemaVTables),
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),
     ("function binding statistics", TestFunctionBindingStatistics),
@@ -37,7 +40,7 @@ foreach ((string name, Action run) in tests)
     catch (Exception ex)
     {
         failures++;
-        Console.Error.WriteLine($"FAIL {name}: {ex.Message}");
+        Console.Error.WriteLine($"FAIL {name}: {ex}");
     }
 }
 return failures == 0 ? 0 : 1;
@@ -140,6 +143,295 @@ static void TestVTableBoundaries()
     Equal(2, slices.Count);
     Equal(0L, slices[0].OffsetToTop);
     Equal(-8L, slices[1].OffsetToTop);
+    Equal(0x2010UL, slices[0].AddressPoint);
+    Equal(0x2028UL, slices[1].AddressPoint);
+}
+
+static void TestVTableUnknownSlots()
+{
+    var memory = new FakeVTableMemory(new Dictionary<ulong, ulong>
+    {
+        [0x1000] = 0x5000, [0x1008] = 0, [0x1010] = 0x5000, [0x1018] = 0xDEAD,
+        [0x1020] = 0x5010,
+    }, new HashSet<ulong> { 0x5000, 0x5010 }, new HashSet<ulong>());
+    Equal(1, VTableEntryScanner.ScanMsvc(memory, 0x1000, endExclusive: 0x1020).Count);
+    var slots = VTableEntryScanner.ScanMsvc(memory, 0x1000, endExclusive: 0x1020, trustedExtent: true);
+    Equal("20480,0,20480,57005", string.Join(',', slots));
+    Equal(2, VTableEntryScanner.ScanMsvc(memory, 0x1000, 2, 0x1020, true).Count);
+    Equal(0, VTableEntryScanner.ScanMsvc(memory, ulong.MaxValue - 3).Count);
+    var adjacent = new FakeVTableMemory(new Dictionary<ulong, ulong>
+    {
+        [0x2000] = 0, [0x2008] = 0x3000, [0x2010] = 0x5000,
+        [0x2018] = 0, [0x2020] = 0x3000, [0x2028] = 0x5010,
+    }, new HashSet<ulong> { 0x5000, 0x5010 }, new HashSet<ulong> { 0x3000 });
+    Equal(1, VTableEntryScanner.ScanItaniumTables(adjacent, 0x2000).Single().Functions.Count);
+    Equal(1, VTableEntryScanner.ScanItaniumTables(adjacent, 0x2000, endExclusive: 0x2018).Count);
+}
+
+static void TestVTableTypes()
+{
+    SchemaVTable[] tables =
+    [
+        new("ns::Derived", 0x1000, 0, "ns::Derived", [], [0x5000, 0x5000]),
+        new("ns::Derived", 0x1100, 16, "Base", ["Base"], [0x5000]),
+        new("ns::Derived", 0x1200, 16, "Base", ["Base"], [0x5000]),
+        new("ns::Derived", 0x1300, null, null, [], [0]),
+    ];
+    var names = VTableTypeBinder.AssignNames(tables.Concat([tables[0]])).Select(x => x.Name).ToArray();
+    Equal("ns::Derived_vtbl,ns::Derived_0010_vtbl,ns::Derived_0010_ea_1200_vtbl,ns::Derived_ea_1300_vtbl", string.Join(',', names));
+    Equal("slot_2", VTableTypeBinder.SlotName(null, 2));
+    Equal("fn_Derived_Foo_0", VTableTypeBinder.SlotName("Derived::Foo", 0));
+    var editor = new FakeVTableTypeEditor();
+    var result = VTableTypeBinder.Bind(tables, editor);
+    Equal(new VTableTypeSummary(3, 2, 1, 1), result);
+    Equal(4, editor.Attempts.Count);
+    Equal(2, editor.Attempts[0].Functions.Count);
+    var reserved = VTableTypeBinder.AssignNames(new[]
+    {
+        tables[0] with { AddressPoint = 0x900 },
+        tables[0] with { ExistingTypeName = "ns::Derived_vtbl" },
+    }).Select(x => x.Name).ToArray();
+    Equal("ns::Derived_ea_900_vtbl,ns::Derived_vtbl", string.Join(',', reserved));
+}
+
+static unsafe void TestNativeSchemaVTables()
+{
+    string? binary = Environment.GetEnvironmentVariable("S2ATELIER_TEST_VTABLES");
+    if (string.IsNullOrWhiteSpace(binary))
+    {
+        Console.WriteLine("SKIP native schema vtables: set IDA_PATH and S2ATELIER_TEST_VTABLES (PE/ELF input).");
+        return;
+    }
+    string ida = Environment.GetEnvironmentVariable("IDA_PATH") ?? throw new Exception("IDA_PATH required");
+    True(IdaKernel.TryInitialize(ida, IdaSdkVersion.Auto, out string? error), error);
+    using var temporary = new TempDirectory();
+    string copy = System.IO.Path.Combine(temporary.Path, System.IO.Path.GetFileName(binary));
+    File.Copy(binary, copy);
+    byte* path = Utf8.Allocate(copy);
+    try { Equal(0, IdaNative.open_database(path, 0, null)); }
+    finally { Utf8.Free(path); }
+    try
+    {
+        IdaNative.auto_wait();
+        Equal(56, System.Runtime.InteropServices.Marshal.SizeOf<IdaUdtData>());
+        Equal(32, System.Runtime.InteropServices.Marshal.SizeOf<IdaPointerData>());
+        Equal((nint)44, System.Runtime.InteropServices.Marshal.OffsetOf<IdaUdtData>("Flags"));
+        ulong start = 0x600000000;
+        byte* segmentName = Utf8.Allocate("s2_vtable_test"), segmentClass = Utf8.Allocate("DATA");
+        try { True(IdaNative.add_segm(0, start, start + 0x1000, segmentName, segmentClass, 0) != 0); }
+        finally { Utf8.Free(segmentName); Utf8.Free(segmentClass); }
+        byte[] zeros = new byte[0x1000];
+        fixed (byte* data = zeros) IdaNative.put_bytes(start, data, (nuint)zeros.Length);
+        True(IdaNative.get_func_qty() > 0);
+        ulong target = *(ulong*)IdaNative.getn_func(0);
+        TypeInfo prototype = default;
+        byte* declaration = Utf8.Allocate("int __fastcall __s2_native_method(void *self, int value);");
+        try
+        {
+            True(IdaNative.parse_decl(&prototype, null, IdaNative.get_idati(), declaration, 1 | 8 | 128) != 0);
+            True(IdaNative.apply_tinfo(target, &prototype, 1) != 0);
+        }
+        finally { Utf8.Free(declaration); prototype.Dispose(); }
+
+        // Construct the same explicit-vptr/inheritance representation emitted by the schema header.
+        MakeClass("S2TestBase", false);
+        MakeClass("S2TestOther", false);
+        MakeClass("S2TestDerived", true);
+        var classModels = new[]
+        {
+            new SchemaClass("S2TestBase", 0, "test", 8, 8, false, false, [], []),
+            new SchemaClass("S2TestOther", 0, "test", 8, 8, false, false, [], []),
+            new SchemaClass("S2TestDerived", 0, "test", 16, 8, false, false, ["S2TestBase", "S2TestOther"], []),
+        }.ToDictionary(x => x.Name);
+        var selection = new SchemaSelection("test", classModels, new Dictionary<string, SchemaEnum>(),
+            new HashSet<string>(), new HashSet<string>(), new HashSet<string>());
+        SchemaVTableTypes.PrepareClassVptrs(selection, classModels.Keys.ToHashSet(), message => throw new Exception(message));
+        True(ValveImplementationTypes.Load("S2TestBase", out TypeInfo baseBefore));
+        True(ValveImplementationTypes.Load("S2TestDerived", out TypeInfo derivedBefore));
+        True(IdaNative.detach_tinfo_t(&baseBefore) != 0);
+        True(IdaNative.detach_tinfo_t(&derivedBefore) != 0);
+        var diagnostics = new List<string>();
+        var editor = new SchemaVTableTypes(diagnostics.Add);
+        SchemaVTable[] tables =
+        [
+            new("S2TestDerived", start, 0, "S2TestDerived", [], [target, target, 0]),
+            new("S2TestDerived", start + 0x40, 8, "S2TestOther", ["S2TestOther"], [target]),
+        ];
+        try
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                foreach (SchemaVTable table in tables)
+                {
+                    ulong[] entries = table.Functions.ToArray();
+                    fixed (ulong* bytes = entries) IdaNative.put_bytes(table.AddressPoint, bytes, (nuint)entries.Length * 8);
+                }
+                VTableTypeSummary result = VTableTypeBinder.Bind(tables, editor);
+                True(diagnostics.Count == 0, string.Join("\n", diagnostics));
+                Equal(new VTableTypeSummary(2, 2, 1, 0), result);
+                foreach (var (table, name) in VTableTypeBinder.AssignNames(tables))
+                {
+                    True(ValveImplementationTypes.Load(name, out TypeInfo vtable));
+                    TypeInfo applied = default;
+                    try
+                    {
+                        uint ordinal = SchemaVTableTypes.Ordinal(name);
+                        Equal(table.AddressPoint, IdaNative.get_vftable_ea(ordinal));
+                        Equal(ordinal, IdaNative.get_vftable_ordinal(table.AddressPoint));
+                        True((IdaNative.get_tinfo_property(vtable.Typid, 306) & 0x100) != 0);
+                        Equal((nuint)table.Functions.Count, IdaNative.get_tinfo_property(vtable.Typid, 16));
+                        True(IdaNative.get_tinfo(&applied, table.AddressPoint) != 0);
+                        True(IdaNative.compare_tinfo(applied.Typid, vtable.Typid, 0) != 0);
+                        True(SchemaVTableTypes.Metadata(vtable.Typid)?.ClassName == table.ClassName);
+                        for (ulong slot = 0; slot < (ulong)table.Functions.Count; slot++)
+                        {
+                            True(ValveImplementationTypes.ReadMember(vtable.Typid, slot, out IdaUdtMember member));
+                            try
+                            {
+                                Equal(slot * 64, member.Offset);
+                                Equal(64UL, member.Size);
+                                if (table.Functions[(int)slot] != 0)
+                                {
+                                    True(IdaNative.get_tinfo_property(member.Type.Typid, 6) != 0);
+                                    TypeInfo expected = default;
+                                    try
+                                    {
+                                        True(IdaNative.get_tinfo(&expected, target) != 0);
+                                        ulong pointed = (ulong)IdaNative.get_tinfo_property(member.Type.Typid, 9);
+                                        True(IdaNative.compare_tinfo(expected.Typid, pointed, 0) != 0);
+                                    }
+                                    finally { expected.Dispose(); }
+                                }
+                            }
+                            finally { member.Dispose(); }
+                        }
+                    }
+                    finally { vtable.Dispose(); applied.Dispose(); }
+                }
+                True(ValveImplementationTypes.Load("S2TestDerived", out TypeInfo derived));
+                True(ValveImplementationTypes.Load("S2TestBase", out TypeInfo baseAfter));
+                try
+                {
+                    True(SchemaVTableTypes.SameLayout(derivedBefore.Typid, derived.Typid));
+                    True(IdaNative.compare_tinfo(baseBefore.Typid, baseAfter.Typid, 0) != 0);
+                    foreach (ulong offset in new ulong[] { 0, 64 })
+                    {
+                        True(ValveImplementationTypes.ReadMember(derived.Typid, offset, out IdaUdtMember vptr, true));
+                        try
+                        {
+                            Equal(offset, vptr.Offset);
+                            True((vptr.Flags & 0x100) != 0);
+                            ulong pointed = (ulong)IdaNative.get_tinfo_property(vptr.Type.Typid, 9);
+                            True((IdaNative.get_tinfo_property(pointed, 306) & 0x100) != 0);
+                        }
+                        finally { vptr.Dispose(); }
+                    }
+                }
+                finally { baseAfter.Dispose(); derived.Dispose(); }
+            }
+            // A different class cannot take an occupied table address.
+            True(editor.Complete(tables[0] with { ClassName = "S2Other" }, "S2Other_vtbl").Conflict);
+            True(editor.Complete(tables[0] with { ClassName = "S2Other", ExistingTypeName = "S2TestDerived_vtbl" },
+                "S2TestDerived_vtbl").Conflict);
+            var saved = SchemaVTableTypes.Existing(selection).ToArray();
+            Equal(2, saved.Length);
+            Equal(3, saved.Single(x => x.Address == start).Slots);
+            Equal(8UL, SchemaVTableTypes.ResolveLayout(tables[1] with { ObjectOffset = null }).ObjectOffset!.Value);
+            True(SchemaVTableTypes.ResolveLayout(tables[1] with { ObjectOffset = 7 }).ObjectOffset == null);
+
+            SetName(start, "??_7S2TestDerived@@6B@");
+            SetName(start + 0x40, "??_7S2TestDerived@@6BS2TestOther@@@");
+            // MSVC x64 COL with image-relative self/type/hierarchy references.
+            WritePointers(start + 0x38, [start + 0x200]);
+            uint[] locator = [1, 8, 0, 0x300, 0x320, 0x200];
+            fixed (uint* bytes = locator) IdaNative.put_bytes(start + 0x200, bytes, 24);
+            SchemaImport.VTableScan msvc = SchemaImport.ScanVTables(selection, SchemaTargetPlatform.WindowsMsvc);
+            Equal(2, msvc.Tables.Count);
+            Equal(3, msvc.Tables.Single(x => x.AddressPoint == start).Functions.Count);
+            Equal(8UL, msvc.Tables.Single(x => x.AddressPoint == start + 0x40).ObjectOffset!.Value);
+
+            WritePointers(start + 0x100, [0, start + 0x300, target, unchecked((ulong)-8L), start + 0x300, target]);
+            SetName(start + 0x100, "_ZTV13S2TestDerived");
+            SchemaImport.VTableScan itanium = SchemaImport.ScanVTables(selection, SchemaTargetPlatform.LinuxItanium);
+            True(itanium.Tables.Any(x => x.AddressPoint == start + 0x110 && x.ObjectOffset == 0));
+            True(itanium.Tables.Any(x => x.AddressPoint == start + 0x128 && x.ObjectOffset == 8));
+            True(!itanium.Tables.Any(x => x.AddressPoint == start + 0x100));
+
+            // A root's own vptr is physically replaced, while inherited ones above were synthesized.
+            SchemaVTable root = new("S2TestBase", start + 0x80, 0, "S2TestBase", [], [target]);
+            WritePointers(root.AddressPoint, [target]);
+            diagnostics.Clear();
+            True(editor.Complete(root, "S2TestBase_vtbl").Bound, string.Join("\n", diagnostics));
+            True(diagnostics.Count == 0, string.Join("\n", diagnostics));
+            True(ValveImplementationTypes.Load("S2TestBase_vtbl", out TypeInfo rootVtable));
+            try
+            {
+                // Simulate an older unbound VFT type without importer metadata; adopt it by canonical name.
+                byte* emptyComment = Utf8.Allocate("");
+                try { Equal((nuint)0, IdaNative.set_tinfo_property4(&rootVtable, 5, (nuint)emptyComment, 0, 0, 0)); }
+                finally { Utf8.Free(emptyComment); }
+                IdaNative.set_vftable_ea(SchemaVTableTypes.Ordinal("S2TestBase_vtbl"), ulong.MaxValue);
+            }
+            finally { rootVtable.Dispose(); }
+            True(editor.Complete(root, "S2TestBase_vtbl").Bound, string.Join("\n", diagnostics));
+
+            // Recreate imported classes as the header replacement pass does, then rebind all tables.
+            SchemaImport.DeleteReplacedTypes(classModels.Keys);
+            MakeClass("S2TestBase", false);
+            MakeClass("S2TestOther", false);
+            MakeClass("S2TestDerived", true);
+            SchemaVTableTypes.PrepareClassVptrs(selection, classModels.Keys.ToHashSet(), message => throw new Exception(message));
+            diagnostics.Clear();
+            Equal(new VTableTypeSummary(3, 3, 1, 0), VTableTypeBinder.Bind(tables.Concat([root]), editor));
+            True(diagnostics.Count == 0, string.Join("\n", diagnostics));
+        }
+        finally { baseBefore.Dispose(); derivedBefore.Dispose(); }
+    }
+    finally { IdaNative.close_database(0); }
+
+    static void SetName(ulong address, string name)
+    {
+        byte* native = Utf8.Allocate(name);
+        try { True(IdaNative.set_name(address, native, 0x2100) != 0); }
+        finally { Utf8.Free(native); }
+    }
+
+    static void WritePointers(ulong address, ulong[] values)
+    {
+        fixed (ulong* bytes = values) IdaNative.put_bytes(address, bytes, (nuint)values.Length * 8);
+    }
+
+    static void MakeClass(string name, bool derived)
+    {
+        IdaUdtData data = IdaUdtData.Allocate(derived ? 2 : 1);
+        TypeInfo type = default;
+        try
+        {
+            data.TotalSize = data.UnpaddedSize = derived ? 16U : 8U;
+            data.Alignment = 8;
+            data.Flags = 0x80 | 0x400;
+            for (int i = 0; i < (int)data.Count; i++)
+            {
+                ref IdaUdtMember member = ref data.Members[i];
+                member.Offset = (ulong)i * 64;
+                member.Size = 64;
+                member.Name = SchemaVTableTypes.String(derived ? "base" + i : "__vftable");
+                if (derived)
+                {
+                    True(ValveImplementationTypes.Load(i == 0 ? "S2TestBase" : "S2TestOther", out member.Type));
+                    member.Flags = 0x20;
+                }
+                else
+                {
+                    TypeInfo empty = new() { Typid = 1 };
+                    True(SchemaVTableTypes.Pointer(ref empty, out member.Type));
+                }
+            }
+            True(IdaNative.create_tinfo(&type, 0x0D, 0x0D, &data) != 0);
+            True(SchemaVTableTypes.Save(ref type, name));
+        }
+        finally { type.Dispose(); data.Dispose(); }
+    }
 }
 
 static void TestOwnership()
@@ -613,6 +905,10 @@ static void TestInterfaceWorkerProtocol()
         InterfaceVTablesImported = 16,
         InterfaceImportSkipped = 4,
         InterfaceClangErrors = 3,
+        SchemaVTableTypesCompleted = 7,
+        SchemaVTableAddressesBound = 6,
+        SchemaVTableUnknownSlots = 5,
+        SchemaVTableConflicts = 4,
     };
     WireMessage doneRoundTrip = WorkerProtocol.Read(WorkerProtocol.Write(done))!;
     True(doneRoundTrip.InterfaceImportApplicable);
@@ -622,6 +918,11 @@ static void TestInterfaceWorkerProtocol()
     Equal(16, doneRoundTrip.InterfaceVTablesImported);
     Equal(4, doneRoundTrip.InterfaceImportSkipped);
     Equal(3, doneRoundTrip.InterfaceClangErrors);
+    Equal(7, doneRoundTrip.SchemaVTableTypesCompleted);
+    Equal(6, doneRoundTrip.SchemaVTableAddressesBound);
+    Equal(5, doneRoundTrip.SchemaVTableUnknownSlots);
+    Equal(4, doneRoundTrip.SchemaVTableConflicts);
+    Equal(0, WorkerProtocol.Read("{\"Kind\":3}")!.SchemaVTableAddressesBound);
 }
 
 static void TestRepositorySdk()
@@ -795,6 +1096,7 @@ sealed class FakeVTableMemory(
     public ulong ReadPointer(ulong address) => pointers.TryGetValue(address, out ulong value) ? value : 0;
     public bool IsMapped(ulong address) => mapped.Contains(address) || functions.Contains(address);
     public bool IsFunctionStart(ulong address) => functions.Contains(address);
+    public bool CanReadPointer(ulong address) => pointers.ContainsKey(address);
 }
 
 sealed class FakeFunctionTypeEditor(IReadOnlySet<ulong> failures) : IVirtualFunctionTypeEditor
@@ -805,6 +1107,22 @@ sealed class FakeFunctionTypeEditor(IReadOnlySet<ulong> failures) : IVirtualFunc
     {
         Attempts.Add((address, owner));
         return !failures.Contains(address);
+    }
+}
+
+sealed class FakeVTableTypeEditor : IVTableTypeEditor
+{
+    public List<SchemaVTable> Attempts { get; } = [];
+    public VTableTypeEditResult Complete(SchemaVTable table, string typeName)
+    {
+        Attempts.Add(table);
+        return table.AddressPoint switch
+        {
+            0x1100 => new(false, false, 0, true),
+            0x1200 => new(true, false),
+            0x1300 => new(true, true, 1),
+            _ => new(true, true),
+        };
     }
 }
 

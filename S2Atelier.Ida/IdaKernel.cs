@@ -15,7 +15,8 @@ public sealed record IdaAnalysisResult(
     int InterfaceVTablesImported = 0, int InterfaceImportSkipped = 0, int InterfaceClangErrors = 0,
     bool SchemaImportApplicable = false, string? SchemaProject = null, int SchemaTypesImported = 0,
     int SchemaVTablesMatched = 0, int SchemaFunctionsBound = 0, int SchemaFunctionsSkipped = 0,
-    int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0);
+    int SchemaFunctionConflicts = 0, int SchemaClangErrors = 0,
+    int SchemaVTableTypesCompleted = 0, int SchemaVTableAddressesBound = 0, int SchemaVTableUnknownSlots = 0, int SchemaVTableConflicts = 0);
 
 public static unsafe class IdaKernel
 {
@@ -228,7 +229,11 @@ public static unsafe class IdaKernel
                 SchemaFunctionsBound: schemaResult.FunctionsBound,
                 SchemaFunctionsSkipped: schemaResult.FunctionsSkipped,
                 SchemaFunctionConflicts: schemaResult.FunctionConflicts,
-                SchemaClangErrors: schemaResult.ClangErrors);
+                SchemaClangErrors: schemaResult.ClangErrors,
+                SchemaVTableTypesCompleted: schemaResult.VTableTypesCompleted,
+                SchemaVTableAddressesBound: schemaResult.VTableAddressesBound,
+                SchemaVTableUnknownSlots: schemaResult.VTableUnknownSlots,
+                SchemaVTableConflicts: schemaResult.VTableConflicts);
             completed = true;
             return result;
         }

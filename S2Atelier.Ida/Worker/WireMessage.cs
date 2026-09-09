@@ -55,6 +55,10 @@ internal sealed class WireMessage
     public int SchemaFunctionsSkipped { get; init; }
     public int SchemaFunctionConflicts { get; init; }
     public int SchemaClangErrors { get; init; }
+    public int SchemaVTableTypesCompleted { get; init; }
+    public int SchemaVTableAddressesBound { get; init; }
+    public int SchemaVTableUnknownSlots { get; init; }
+    public int SchemaVTableConflicts { get; init; }
 
     public string? Error { get; init; }
 }

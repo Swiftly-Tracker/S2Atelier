@@ -13,7 +13,8 @@ public sealed record SchemaImportResult(
     int FunctionsBound = 0,
     int FunctionsSkipped = 0,
     int FunctionConflicts = 0,
-    int ClangErrors = 0);
+    int ClangErrors = 0, int VTableTypesCompleted = 0, int VTableAddressesBound = 0,
+    int VTableUnknownSlots = 0, int VTableConflicts = 0);
 
 public sealed class SchemaImportException(string message, int clangErrors = 0) : Exception(message)
 {
@@ -100,14 +101,19 @@ public static unsafe class SchemaImport
             }
             int importedTypes = CountAvailableTypes(header.ImportedTypeNames);
 
+            SchemaVTableTypes.PrepareClassVptrs(selection, scan.PolymorphicClasses, Console.Error.WriteLine);
+            scan = ResolveTableLayouts(scan);
             VTableBindingSummary binding = BindFunctions(scan, selection);
+            VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine));
             Console.Error.WriteLine(
                 $"[schema] {Path.GetFileName(binaryPath)}: project={selection.Project}, types={importedTypes}, " +
-                $"vtables={scan.MatchedVTables}, bound={binding.Bound}, skipped={binding.Skipped}, " +
+                $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
+                $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
                 $"conflicts={binding.Conflicts}, clang-errors={clangErrors}" +
                 (clangErrors == 0 ? "." : " (ignored; valid declarations were imported)."));
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
-                binding.Bound, binding.Skipped, binding.Conflicts, clangErrors);
+                binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
+                types.Completed, types.Bound, types.UnknownSlots, types.Conflicts);
         }
         finally
         {
@@ -317,85 +323,118 @@ public static unsafe class SchemaImport
         }
     }
 
-    private static VTableScan ScanVTables(SchemaSelection selection, SchemaTargetPlatform platform)
+    internal static VTableScan ScanVTables(SchemaSelection selection, SchemaTargetPlatform platform)
     {
+        IdaNative.auto_wait();
         var functionOwners = new Dictionary<ulong, HashSet<string>>();
         var polymorphic = new HashSet<string>(StringComparer.Ordinal);
         var pureCalls = new HashSet<ulong>();
         var unresolvedThis = new HashSet<ulong>();
-        int matchedTables = 0;
+        var descriptors = new List<VTableDescriptor>();
+        var boundaries = new SortedSet<ulong>();
+        var found = new Dictionary<ulong, SchemaVTable>();
+        var existing = SchemaVTableTypes.Existing(selection).ToDictionary(x => x.Address);
         nuint nameCount = IdaNative.get_nlist_size();
-
         for (nuint i = 0; i < nameCount; i++)
         {
             byte* rawPointer = IdaNative.get_nlist_name(i);
-            if (rawPointer == null)
-            {
-                continue;
-            }
+            if (rawPointer == null) continue;
             string rawName = Marshal.PtrToStringUTF8((nint)rawPointer) ?? string.Empty;
             ulong address = IdaNative.get_nlist_ea(i);
-            if (IsPureCallName(rawName))
-            {
-                pureCalls.Add(address);
-            }
+            boundaries.Add(address);
+            if (IsPureCallName(rawName)) pureCalls.Add(address);
             if (!rawName.StartsWith(platform == SchemaTargetPlatform.WindowsMsvc ? "??_7" : "_ZTV", StringComparison.Ordinal))
-            {
                 continue;
-            }
-
-            string? demangled = Demangle(rawName);
-            if (!VTableAnalysis.TryDescribe(address, rawName, demangled, out VTableDescriptor descriptor))
-            {
-                continue;
-            }
-            if (!selection.Classes.ContainsKey(descriptor.ClassName))
-            {
-                continue;
-            }
-
-            IReadOnlyList<VTableSlice> tables;
+            if (VTableAnalysis.TryDescribe(address, rawName, Demangle(rawName), out VTableDescriptor descriptor) &&
+                selection.Classes.ContainsKey(descriptor.ClassName)) descriptors.Add(descriptor);
+        }
+        foreach (var saved in existing.Values) boundaries.Add(saved.Address);
+        foreach (VTableDescriptor descriptor in descriptors.OrderBy(x => x.Address))
+        {
+            // Symbols supply a hard stopping boundary, not proof that every byte before it is a slot.
+            ulong? end = boundaries.GetViewBetween(descriptor.Address + 1, ulong.MaxValue).FirstOrDefault();
+            if (end == 0) end = null;
+            IReadOnlyList<VTableSlice> slices;
             if (descriptor.Abi == VTableAbi.Msvc)
             {
-                tables = [new VTableSlice(0, VTableEntryScanner.ScanMsvc(VTableMemory, descriptor.Address))];
-                foreach (VTableSlice table in tables.Where(x => x.Functions.Count > 0))
-                {
-                    if (descriptor.SecondaryBaseName != null && !selection.Classes.ContainsKey(descriptor.SecondaryBaseName))
-                    {
-                        unresolvedThis.UnionWith(table.Functions);
-                        matchedTables++;
-                        polymorphic.Add(descriptor.ClassName);
-                        Console.Error.WriteLine(
-                            $"[schema] vtable {descriptor.SymbolName}: secondary base '{descriptor.SecondaryBaseName}' is unavailable; functions skipped.");
-                        continue;
-                    }
-                    string owner = descriptor.SecondaryBaseName ?? descriptor.ClassName;
-                    AddVTable(table.Functions, descriptor.ClassName, owner, functionOwners, polymorphic);
-                    matchedTables++;
-                }
+                var functions = VTableEntryScanner.ScanMsvc(VTableMemory, descriptor.Address, endExclusive: end);
+                slices = [new(0, functions, descriptor.Address, functions.Count == 1024)];
             }
-            else
+            else slices = VTableEntryScanner.ScanItaniumTables(VTableMemory, descriptor.Address, endExclusive: end);
+            foreach (VTableSlice slice in slices.Where(x => x.Functions.Count > 0))
             {
-                tables = VTableEntryScanner.ScanItaniumTables(VTableMemory, descriptor.Address);
-                foreach (VTableSlice table in tables.Where(x => x.Functions.Count > 0))
-                {
-                    string? owner = ResolveBaseAtOffset(descriptor.ClassName, table.OffsetToTop, selection);
-                    if (owner == null)
-                    {
-                        unresolvedThis.UnionWith(table.Functions);
-                        matchedTables++;
-                        polymorphic.Add(descriptor.ClassName);
-                        Console.Error.WriteLine(
-                            $"[schema] vtable {descriptor.SymbolName}: no schema base at offset {-table.OffsetToTop}; functions skipped.");
-                        continue;
-                    }
-                    AddVTable(table.Functions, descriptor.ClassName, owner, functionOwners, polymorphic);
-                    matchedTables++;
-                }
+                ulong? offset = descriptor.Abi == VTableAbi.Itanium ? checked((ulong)-slice.OffsetToTop)
+                    : ReadMsvcObjectOffset(slice.AddressPoint) ?? (descriptor.SecondaryBaseName == null ? 0UL : null);
+                string? owner = descriptor.Abi == VTableAbi.Msvc
+                    ? descriptor.SecondaryBaseName ?? descriptor.ClassName
+                    : ResolveBaseAtOffset(descriptor.ClassName, slice.OffsetToTop, selection);
+                if (owner != null && !selection.Classes.ContainsKey(owner)) owner = null;
+                found.TryAdd(slice.AddressPoint, new(descriptor.ClassName, slice.AddressPoint, offset,
+                    owner, owner == null || owner == descriptor.ClassName ? [] : [owner], slice.Functions,
+                    existing.TryGetValue(slice.AddressPoint, out var prior) ? prior.Name : null, slice.Truncated));
             }
         }
+        // Bound types supply a trusted slot count, including null/unknown entries. Read them before replacement.
+        foreach (var saved in existing.Values)
+        {
+            ulong end = saved.Address + (ulong)saved.Slots * 8;
+            ulong next = boundaries.GetViewBetween(saved.Address + 1, ulong.MaxValue).FirstOrDefault();
+            if (next != 0) end = Math.Min(end, next);
+            var slots = VTableEntryScanner.ScanMsvc(VTableMemory, saved.Address, endExclusive: end, trustedExtent: true);
+            if (slots.Count == 0) continue;
+            if (found.TryGetValue(saved.Address, out SchemaVTable? scanned))
+                found[saved.Address] = scanned with { Functions = slots.Count >= scanned.Functions.Count ? slots : scanned.Functions };
+            else found.Add(saved.Address, new(saved.Metadata.ClassName, saved.Address, saved.Metadata.ObjectOffset,
+                saved.Metadata.ThisType, saved.Metadata.BasePath, slots, saved.Name));
+        }
+        foreach (SchemaVTable table in found.Values)
+        {
+            polymorphic.Add(table.ClassName);
+            if (table.ThisType != null) polymorphic.Add(table.ThisType);
+            if (table.Truncated) Console.Error.WriteLine($"[schema] {table.ClassName} vtable 0x{table.AddressPoint:X}: scan limit reached.");
+        }
+        var expected = new HashSet<string>(polymorphic, StringComparer.Ordinal);
+        var queue = new Queue<string>(expected);
+        while (queue.TryDequeue(out string? name))
+            if (selection.Classes.TryGetValue(name, out SchemaClass? schema) && schema.BaseClasses.Count > 0 &&
+                expected.Add(schema.BaseClasses[0])) queue.Enqueue(schema.BaseClasses[0]);
+        var matchedClasses = found.Values.Select(x => x.ClassName).ToHashSet(StringComparer.Ordinal);
+        string[] missing = expected.Except(matchedClasses).Order(StringComparer.Ordinal).ToArray();
+        if (missing.Length > 0)
+            Console.Error.WriteLine($"[schema] {missing.Length} inferred polymorphic class(es) have no actual vtable: " +
+                string.Join(", ", missing.Take(16)) + (missing.Length > 16 ? ", ..." : "") + ".");
+        return new VTableScan(functionOwners, polymorphic, pureCalls, unresolvedThis, found.Count, found.Values.ToArray());
+    }
 
-        return new VTableScan(functionOwners, polymorphic, pureCalls, unresolvedThis, matchedTables);
+    private static ulong? ReadMsvcObjectOffset(ulong addressPoint)
+    {
+        if (addressPoint < 8 || !VTableMemory.CanReadPointer(addressPoint - 8)) return null;
+        ulong locator = IdaNative.get_qword(addressPoint - 8);
+        if (locator == 0 || locator > ulong.MaxValue - 23 || IdaNative.is_mapped(locator + 23) == 0 ||
+            IdaNative.is_mapped(locator) == 0 || IdaNative.get_dword(locator) != 1) return null;
+        // PE x64 RTTICompleteObjectLocator uses image-relative references; validate its self RVA.
+        uint self = IdaNative.get_dword(locator + 20);
+        if (self > locator || IdaNative.is_mapped(locator - self) == 0) return null;
+        uint type = IdaNative.get_dword(locator + 12), hierarchy = IdaNative.get_dword(locator + 16);
+        if (IdaNative.is_mapped(locator - self + type) == 0 || IdaNative.is_mapped(locator - self + hierarchy) == 0)
+            return null;
+        return IdaNative.get_dword(locator + 4);
+    }
+
+    private static VTableScan ResolveTableLayouts(VTableScan scan)
+    {
+        var tables = new List<SchemaVTable>();
+        var owners = new Dictionary<ulong, HashSet<string>>();
+        var unresolved = new HashSet<ulong>();
+        foreach (SchemaVTable table in scan.Tables)
+        {
+            SchemaVTable resolved = SchemaVTableTypes.ResolveLayout(table);
+            tables.Add(resolved);
+            ulong[] functions = resolved.Functions.Where(IsFunctionStart).ToArray();
+            if (resolved.ThisType == null) unresolved.UnionWith(functions);
+            else AddVTable(functions, resolved.ClassName, resolved.ThisType, owners, new HashSet<string>());
+        }
+        return scan with { Tables = tables, FunctionOwners = owners, UnresolvedThisAddresses = unresolved };
     }
 
     private static void AddVTable(
@@ -634,12 +673,13 @@ public static unsafe class SchemaImport
     private static string QuoteArgument(string value)
         => value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"" : value;
 
-    private sealed record VTableScan(
+    internal sealed record VTableScan(
         IReadOnlyDictionary<ulong, HashSet<string>> FunctionOwners,
         IReadOnlySet<string> PolymorphicClasses,
         IReadOnlySet<ulong> PureCallAddresses,
         IReadOnlySet<ulong> UnresolvedThisAddresses,
-        int MatchedVTables)
+        int MatchedVTables,
+        IReadOnlyList<SchemaVTable> Tables)
     {
         public int FunctionAddressCount => FunctionOwners.Keys.Concat(UnresolvedThisAddresses).Distinct().Count();
     }
@@ -649,6 +689,7 @@ public static unsafe class SchemaImport
         public ulong ReadPointer(ulong address) => IdaNative.get_qword(address);
         public bool IsMapped(ulong address) => IdaNative.is_mapped(address) != 0;
         public bool IsFunctionStart(ulong address) => SchemaImport.IsFunctionStart(address);
+        public bool CanReadPointer(ulong address) => address <= ulong.MaxValue - 7 && IsMapped(address) && IsMapped(address + 7);
     }
 
     private sealed class IdaFunctionTypeEditor(LimitedDiagnostics diagnostics) : IVirtualFunctionTypeEditor
