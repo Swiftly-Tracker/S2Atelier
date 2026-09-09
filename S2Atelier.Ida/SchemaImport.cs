@@ -103,8 +103,22 @@ public static unsafe class SchemaImport
 
             SchemaVTableTypes.PrepareClassVptrs(selection, scan.PolymorphicClasses, Console.Error.WriteLine);
             scan = ResolveTableLayouts(scan);
-            VTableBindingSummary binding = BindFunctions(scan, selection);
-            VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine));
+            using var sdk = Hl2SdkVTables.Load(hl2SdkPath, platform, selection, scan.Tables, Console.Error.WriteLine);
+            var slots = sdk.Resolve(scan.Tables, selection);
+            VTableBindingSummary sdkBinding = SdkFunctionBinding.Bind(scan.Tables, slots,
+                scan.PureCallAddresses, scan.UnresolvedThisAddresses, Console.Error.WriteLine);
+            // SDK candidates, including protected/conflicting addresses, must not be rewritten by fallback.
+            var sdkAddresses = scan.Tables.SelectMany(table => table.Functions
+                .Where((_, index) => slots.ContainsKey((table.AddressPoint, index)))).ToHashSet();
+            VTableBindingSummary fallback = BindFunctions(scan with
+            {
+                FunctionOwners = scan.FunctionOwners.Where(x => !sdkAddresses.Contains(x.Key))
+                    .ToDictionary(x => x.Key, x => x.Value),
+                UnresolvedThisAddresses = scan.UnresolvedThisAddresses.Except(sdkAddresses).ToHashSet(),
+            }, selection);
+            var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
+                sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts);
+            VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine, slots));
             Console.Error.WriteLine(
                 $"[schema] {Path.GetFileName(binaryPath)}: project={selection.Project}, types={importedTypes}, " +
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
@@ -248,7 +262,7 @@ public static unsafe class SchemaImport
         }
     }
 
-    internal static int ParseHeader(string path, bool testOnly, bool printDiagnostics)
+    internal static int ParseHeader(string path, bool testOnly, bool printDiagnostics, void* targetTil = null)
     {
         byte* parser = Utf8.Allocate("clang");
         byte* input = Utf8.Allocate(path);
@@ -261,7 +275,7 @@ public static unsafe class SchemaImport
             }
             try
             {
-                return IdaNative.parse_decls_with_parser_ext(parser, IdaNative.get_idati(), input, flags);
+                return IdaNative.parse_decls_with_parser_ext(parser, targetTil == null ? IdaNative.get_idati() : targetTil, input, flags);
             }
             finally
             {
@@ -540,6 +554,11 @@ public static unsafe class SchemaImport
 
     private static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics)
     {
+        if (!SdkFunctionBinding.CanUpdateType(address))
+        {
+            diagnostics.Write($"[schema] vfunc 0x{address:X}: explicit/edited prototype preserved.");
+            return false;
+        }
         TypeInfo original = default;
         try
         {

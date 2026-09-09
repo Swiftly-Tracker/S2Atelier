@@ -14,6 +14,8 @@ var tests = new (string Name, Action Run)[]
     ("vtable bounded unknown slots", TestVTableUnknownSlots),
     ("vtable naming and partial failures", TestVTableTypes),
     ("gated native schema vtable types", TestNativeSchemaVTables),
+    ("SDK vtable matching and ownership", SdkVTableTests.Managed),
+    ("gated native SDK vtables", SdkVTableTests.Native),
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),
     ("function binding statistics", TestFunctionBindingStatistics),
@@ -180,7 +182,7 @@ static void TestVTableTypes()
     var names = VTableTypeBinder.AssignNames(tables.Concat([tables[0]])).Select(x => x.Name).ToArray();
     Equal("ns::Derived_vtbl,ns::Derived_0010_vtbl,ns::Derived_0010_ea_1200_vtbl,ns::Derived_ea_1300_vtbl", string.Join(',', names));
     Equal("slot_2", VTableTypeBinder.SlotName(null, 2));
-    Equal("fn_Derived_Foo_0", VTableTypeBinder.SlotName("Derived::Foo", 0));
+    Equal("vfn_Derived_Foo_0", VTableTypeBinder.SlotName("Derived::Foo", 0));
     var editor = new FakeVTableTypeEditor();
     var result = VTableTypeBinder.Bind(tables, editor);
     Equal(new VTableTypeSummary(3, 2, 1, 1), result);

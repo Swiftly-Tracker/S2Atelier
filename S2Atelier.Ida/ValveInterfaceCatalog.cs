@@ -45,6 +45,18 @@ public sealed partial class ValveInterfaceCatalog
                 $"HL2SDK interface catalog does not exist: '{interfaceHeader}'.");
         }
 
+        var headers = ReadHeaders(root);
+
+        string relativeInterfaceHeader = NormalizePath(Path.GetRelativePath(root, interfaceHeader));
+        string headerText = headers.TryGetValue(relativeInterfaceHeader, out string? loaded)
+            ? loaded
+            : File.ReadAllText(interfaceHeader);
+        string interfaceSource = Path.Combine(root, "interfaces", "interfaces.cpp");
+        return Parse(headerText, File.Exists(interfaceSource) ? File.ReadAllText(interfaceSource) : null, headers);
+    }
+
+    internal static Dictionary<string, string> ReadHeaders(string root)
+    {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (string subtree in new[] { "public", "game" })
         {
@@ -61,12 +73,7 @@ public sealed partial class ValveInterfaceCatalog
             }
         }
 
-        string relativeInterfaceHeader = NormalizePath(Path.GetRelativePath(root, interfaceHeader));
-        string headerText = headers.TryGetValue(relativeInterfaceHeader, out string? loaded)
-            ? loaded
-            : File.ReadAllText(interfaceHeader);
-        string interfaceSource = Path.Combine(root, "interfaces", "interfaces.cpp");
-        return Parse(headerText, File.Exists(interfaceSource) ? File.ReadAllText(interfaceSource) : null, headers);
+        return headers;
     }
 
     public static ValveInterfaceCatalog Parse(
@@ -224,7 +231,7 @@ public sealed partial class ValveInterfaceCatalog
         return result;
     }
 
-    private static string? FindDefinitionHeader(
+    internal static string? FindDefinitionHeader(
         string className,
         IReadOnlyDictionary<string, string> headers)
     {
@@ -234,6 +241,7 @@ public sealed partial class ValveInterfaceCatalog
         var matches = new List<string>();
         foreach ((string path, string source) in headers)
         {
+            if (!source.Contains(leaf, StringComparison.Ordinal)) continue;
             string sanitized = StripCommentsAndLiterals(source);
             if (Regex.IsMatch(sanitized, pattern, RegexOptions.CultureInvariant))
             {

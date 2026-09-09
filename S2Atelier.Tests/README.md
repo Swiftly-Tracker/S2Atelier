@@ -6,7 +6,7 @@ Run the managed suite with .NET 10:
 dotnet run --project S2Atelier.Tests
 ```
 
-The native schema vtable test is opt-in. It needs a licensed IDA/idalib installation
+The native schema and HL2SDK vtable tests are opt-in. They need a licensed IDA/idalib installation
 and a PE x64 or ELF x64 input containing at least one recognized function:
 
 ```powershell
@@ -26,6 +26,25 @@ function prototypes, VFT flags, primary/secondary class pointers, unchanged shar
 bases, foreign binding conflicts, adopting older VFT definitions, and importing
 again after replacing schema classes. Secondary type names use IDA's required
 `Class_XXXX_vtbl` convention (minimum four hexadecimal offset digits).
+
+The HL2SDK test parses a synthetic SDK into independent temporary TILs, checks
+MSVC/Itanium destructor slots, partial/inherited definitions (including `unk`
+names), secondary subobjects, const methods, dependency relocation, exact VFT
+prototypes and address binding. It also checks repeat imports after schema
+replacement, shared-function conflicts, purecall exclusion, and protection of
+edited function names/types. No temporary TIL references may survive disposal.
+
+With `HL2SDK_PATH` (default `D:\Code\hl2sdk`), the native test additionally parses
+the real `CEntityInstance` and relocates its virtual prototypes while preserving
+an existing schema layout. This smoke test is skipped for an ELF target on
+Windows, where the native MSVC headers cannot supply Linux system headers;
+synthetic ELF ABI tests still run. Missing native prerequisites print `SKIP`.
+
+Managed tests cover definition discovery/ambiguity, SDK and inherited slot
+priority, table-length/layout conflicts, fallback, member-name disambiguation,
+and ownership metadata. SDK header failures are isolated to their header group;
+the importer reports SDK/inherited/fallback slot counts and retains failed
+headers for diagnosis.
 
 Without `S2ATELIER_TEST_VTABLES`, the native vtable test prints an explicit `SKIP`.
 The older game/HL2SDK integration tests remain separately gated by

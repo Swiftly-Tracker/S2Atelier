@@ -46,7 +46,8 @@ internal struct IdaPointerData
 internal sealed record SchemaVTableMetadata(string ClassName, ulong? ObjectOffset, string? ThisType,
     IReadOnlyList<string> BasePath);
 
-internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic) : IVTableTypeEditor
+internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic,
+    IReadOnlyDictionary<(ulong Table, int Index), SdkResolvedSlot>? sdkSlots = null) : IVTableTypeEditor
 {
     private const byte StructType = 0x0D, PointerType = 0x0A;
     private const uint Vft = 0x100, CppObject = 0x80, Fixed = 0x400;
@@ -143,6 +144,14 @@ internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic) : IVTa
             }
         }
         finally { visiting.Remove(type); }
+    }
+
+    internal static bool HasBaseAt(ulong type, string name, ulong offset)
+    {
+        var paths = new List<(string Name, ulong Offset, string[] Path)>();
+        ReadBases(type, 0, [], paths, new HashSet<ulong>());
+        var matches = paths.Where(x => x.Name == name).ToArray();
+        return matches.Length == 1 && matches[0].Offset == offset;
     }
 
     internal static string NameAt(ulong address)
@@ -252,18 +261,23 @@ internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic) : IVTa
             data.TotalSize = data.UnpaddedSize = (nuint)table.Functions.Count * 8;
             data.Alignment = 8;
             data.Flags = Vft | Fixed;
+            var memberNames = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < table.Functions.Count; i++)
             {
                 ulong target = table.Functions[i];
                 ref IdaUdtMember member = ref data.Members[i];
                 member.Offset = (ulong)i * 64;
                 member.Size = 64;
-                member.Name = String(VTableTypeBinder.SlotName(NameAt(target), i));
+                SdkResolvedSlot? sdk = sdkSlots?.GetValueOrDefault((table.AddressPoint, i));
+                string wanted = sdk?.Name ?? VTableTypeBinder.SlotName(NameAt(target), i);
+                member.Name = String(SdkVTableMatching.UniqueName(wanted, i, memberNames));
                 TypeInfo function = default;
                 bool known = false;
                 try
                 {
-                    if (target != 0 && IdaNative.is_mapped(target) != 0 &&
+                    if (sdk != null && sdk.TryGetFunction(out function))
+                        known = Pointer(ref function, out member.Type);
+                    if (!known && target != 0 && IdaNative.is_mapped(target) != 0 &&
                         ReadFunction(target, ref function))
                         known = Pointer(ref function, out member.Type);
                     if (!known)
@@ -275,7 +289,8 @@ internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic) : IVTa
                     }
                 }
                 finally { function.Dispose(); }
-                member.Comment = String($"slot {i}; target 0x{target:X}; {(known ? "IDA prototype" : "unknown prototype")}");
+                member.Comment = String($"slot {i}; target 0x{target:X}; " +
+                    (sdk != null ? $"HL2SDK {sdk.SourceClass}: {sdk.Header}" : known ? "IDA prototype" : "unknown prototype"));
             }
             if (IdaNative.create_tinfo(&built, StructType, StructType, &data) == 0)
                 throw new InvalidOperationException("cannot create VFT UDT");
