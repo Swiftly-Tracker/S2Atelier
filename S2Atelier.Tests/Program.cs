@@ -4,6 +4,9 @@ using S2Atelier.Ida.Schema;
 using S2Atelier.Ida.Worker;
 using S2Atelier;
 
+if (Environment.GetEnvironmentVariable("S2ATELIER_REBIND_IDB") is { Length: > 0 } repairPath)
+    return SdkBindingRepair.Run(repairPath);
+
 var tests = new (string Name, Action Run)[]
 {
     ("flat sdk parse and selection", TestSelection),

@@ -1,0 +1,9 @@
+FROM debian:13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libclang-common-19-dev wine wine64 xvfb xauth ca-certificates libgl1 && rm -rf /var/lib/apt/lists/*
+ENV WINEDEBUG=-all WINEPREFIX=/wine WINEARCH=win64 DOTNET_EnableWriteXorExecute=0
+RUN xvfb-run -a wineboot --init && wineserver -w
+RUN for version in 90 91 92 93 94; do xvfb-run -a wine reg add 'HKCU\Software\Hex-Rays\IDA' /v "EULA $version" /t REG_DWORD /d 1 /f; done; wineserver -w
+ENTRYPOINT ["xvfb-run", "-a", "wine", "/atelier/S2Atelier.exe"]
+
+ENV S2ATELIER_CLANG_RESOURCE_DIR="Z:\\usr\\lib\\llvm-19\\lib\\clang\\19"
+ENV S2ATELIER_CLANG_INCLUDE_PATH="Z:\\msvc\\crt\\include;Z:\\msvc\\sdk\\include\\ucrt;Z:\\msvc\\sdk\\include\\um;Z:\\msvc\\sdk\\include\\shared"

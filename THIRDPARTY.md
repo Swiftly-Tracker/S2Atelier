@@ -10,6 +10,7 @@ generates the P/Invoke bindings in `S2Atelier.Ida/Generated/`.
 - [GitHub Repository](https://github.com/HexRaysSA/ida-sdk)
 - **Vendored versions**:
   - `9.2` — [`9.2.0-sdk.1`](https://github.com/HexRaysSA/ida-sdk/tree/v9.2.0-sdk.1)
+  - `9.4` — [`v9.4.0-release`](https://github.com/HexRaysSA/ida-sdk/tree/v9.4.0-release), commit `2348615c25f90e357cd2cc72fcfede1ba14ad41a`
   - `9.3` — [`9.3.0-sdk.3`](https://github.com/HexRaysSA/ida-sdk/tree/v9.3.0-sdk.3)
 
 ```

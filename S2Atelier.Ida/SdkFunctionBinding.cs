@@ -19,6 +19,19 @@ internal static unsafe class SdkFunctionBinding
             (Address: address, Table: table, Slot: slots.GetValueOrDefault((table.AddressPoint, index)))))
             .GroupBy(x => x.Address).Where(g => g.Any(x => x.Slot != null));
         int bound = 0, skipped = 0, conflicts = 0;
+        var baseLayouts = new Dictionary<(string Derived, string Base), bool>();
+        bool IsZeroOffsetBase(string derived, string baseName)
+        {
+            var key = (derived, baseName);
+            if (baseLayouts.TryGetValue(key, out bool found)) return found;
+            bool result = false;
+            if (ValveImplementationTypes.Load(derived, out var type))
+            {
+                try { result = SchemaVTableTypes.HasBaseAt(type.Typid, baseName, 0); }
+                finally { type.Dispose(); }
+            }
+            return baseLayouts[key] = result;
+        }
         foreach (var group in candidates.OrderBy(x => x.Key))
         {
             ulong address = group.Key;
@@ -28,18 +41,30 @@ internal static unsafe class SdkFunctionBinding
             { skipped++; continue; }
             var chosen = group.First(x => x.Slot != null);
             string method = chosen.Slot!.Name;
-            string owner = chosen.Table.ThisType!;
+            // A derived override is also present in descendants' tables. The SDK
+            // declaration owner is not the implementation owner. Choose the least-derived
+            // owner actually referencing this address, never an unobserved common base.
+            string? owner = SelectImplementationOwner(group.Select(x => x.Table.ThisType), IsZeroOffsetBase);
+            if (owner == null)
+            {
+                conflicts++;
+                diagnostic($"[schema-sdk] 0x{address:X}: shared function has unrelated/unknown this owners; preserved.");
+                continue;
+            }
             TypeInfo expected = default;
-            bool compatible = chosen.Slot.TryGetFunction(out expected);
+            bool compatible = chosen.Slot.TryGetFunction(out expected) && Hl2SdkVTables.AdjustThis(ref expected, owner);
             try
             {
                 foreach (var candidate in group)
                 {
-                    if (candidate.Table.ThisType != owner) { compatible = false; break; }
                     if (candidate.Slot == null) continue;
                     if (candidate.Slot.Name != method || !candidate.Slot.TryGetFunction(out var other))
                     { compatible = false; break; }
-                    try { compatible &= IdaNative.compare_tinfo(expected.Typid, other.Typid, 0) != 0; }
+                    try
+                    {
+                        compatible &= Hl2SdkVTables.AdjustThis(ref other, owner) &&
+                            IdaNative.compare_tinfo(expected.Typid, other.Typid, 0) != 0;
+                    }
                     finally { other.Dispose(); }
                 }
                 if (!compatible)
@@ -98,6 +123,19 @@ internal static unsafe class SdkFunctionBinding
             finally { expected.Dispose(); }
         }
         return new(bound, skipped, conflicts);
+    }
+
+    internal static string? SelectImplementationOwner(IEnumerable<string?> candidates,
+        Func<string, string, bool> isZeroOffsetBase)
+    {
+        var owners = candidates.Distinct(StringComparer.Ordinal).ToArray();
+        if (owners.Length == 0 || owners.Any(string.IsNullOrEmpty)) return null;
+        string selected = owners[0]!;
+        foreach (string? owner in owners.Skip(1))
+            if (owner != selected && isZeroOffsetBase(selected, owner!)) selected = owner!;
+        // Incomparable siblings remain ambiguous unless their shared implementation's
+        // base table is itself among the observed address owners.
+        return owners.All(owner => owner == selected || isZeroOffsetBase(owner!, selected)) ? selected : null;
     }
 
     internal static bool CanUpdateName(string name, SdkFunctionOwnership? ownership)

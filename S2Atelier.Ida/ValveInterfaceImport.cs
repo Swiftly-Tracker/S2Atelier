@@ -214,7 +214,7 @@ public static unsafe class ValveInterfaceImport
             // but the interface declarations only use separately forward-declared message types.
             File.WriteAllText(Path.Combine(tempDirectory, "network_connection.pb.h"),
                 "#pragma once\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            SchemaImport.ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: true);
+            SchemaImport.ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: true, tempDirectory);
 
             int groupIndex = 0;
             foreach (IGrouping<string, ValveInterfaceDefinition> group in definitions
@@ -356,6 +356,8 @@ public static unsafe class ValveInterfaceImport
         // Declare SDK pointer-only dependencies in the translation unit before
         // IDAClang can resolve their names from previously imported Local Types.
         output.AppendLine("struct InputContextHandle_t__;");
+        // protobuf enums use a 32-bit integer ABI; only the type is needed here.
+        output.AppendLine("typedef int ENetworkDisconnectionReason;");
         // The generated CCLCMsg_Move definition is absent from this SDK snapshot.
         // Keep its wrapper opaque: instantiating CNetMessagePB would require the
         // protobuf base layout, while the interface only takes a const reference.

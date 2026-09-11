@@ -1,0 +1,19 @@
+[Unit]
+Description=S2Atelier Automation
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/s2atelier/app
+EnvironmentFile=/opt/s2atelier/service.env
+ExecStart=/opt/s2atelier/app/S2Atelier.Automation
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

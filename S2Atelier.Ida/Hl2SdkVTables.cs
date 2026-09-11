@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using S2Atelier.Ida.Generated;
 using S2Atelier.Ida.Schema;
@@ -125,7 +126,7 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
             if (groups.Length == 0) return result;
             Directory.CreateDirectory(directory);
             File.WriteAllText(Path.Combine(directory, "network_connection.pb.h"), "#pragma once\n");
-            SchemaImport.ConfigureClang(root, platform, skipLayoutAssertions: true);
+            SchemaImport.ConfigureClang(root, platform, skipLayoutAssertions: true, directory);
             int index = 0;
             foreach (var group in groups)
             {
@@ -174,10 +175,11 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
         byte* native = Utf8.Allocate(name);
         try
         {
-            byte* bytes = null, fields = null, comment = null, comments = null;
-            if (IdaNative.get_named_type(til, native, 1, &bytes, &fields, &comment, &comments, null, null) == 0) return false;
+            // Match tinfo_t::get_named_type: retain a reference rather than deserialize
+            // the entire class definition at every lookup (especially expensive for schema classes).
+            var data = new TypedefData { Til = til, Name = native, Resolve = 1 };
             fixed (TypeInfo* output = &type)
-                return IdaNative.deserialize_tinfo(output, til, &bytes, &fields, &comments, comment) != 0;
+                return IdaNative.create_tinfo(output, 0x3d, 0x3d, &data) != 0;
         }
         finally { Utf8.Free(native); }
     }
@@ -248,7 +250,11 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
         IReadOnlyList<SchemaVTable> tables, SchemaSelection selection)
     {
         var result = new Dictionary<(ulong, int), SdkResolvedSlot>();
-        int inherited = 0;
+        int inherited = 0, dependencyWalks = 0;
+        var elapsed = Stopwatch.StartNew();
+        // Only successful imports are reusable. A failed import may become resolvable later.
+        // Scope this cache to one Resolve call: schema replacement must invalidate it.
+        var imported = new HashSet<(nint Source, SdkPortableType Prototype)>();
         foreach (var table in tables)
         {
             foreach (var (index, match) in SdkVTableMatching.Match(table, selection.Classes, _definitions, diagnostic,
@@ -256,25 +262,30 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
             {
                 var definition = match.Definition;
                 void* source = (void*)_sources[(definition.ClassName, definition.Offset)];
-                if (!match.Slot.Prototype.Restore(out var function, source))
+                var importKey = ((nint)source, match.Slot.Prototype);
+                if (!imported.Contains(importKey))
                 {
-                    function.Dispose();
-                    diagnostic($"[schema-sdk] {table.ClassName} slot {index}: cannot restore SDK prototype; fallback.");
-                    continue;
+                    dependencyWalks++;
+                    if (!match.Slot.Prototype.Restore(out var function, source))
+                    {
+                        diagnostic($"[schema-sdk] {table.ClassName} slot {index}: cannot restore SDK prototype; fallback.");
+                        continue;
+                    }
+                    try
+                    {
+                        if (!ImportDependencies(function.Typid, source, new HashSet<string>(), new HashSet<ulong>()))
+                        {
+                            diagnostic($"[schema-sdk] {table.ClassName} slot {index}: unresolved prototype dependencies/this; fallback.");
+                            continue;
+                        }
+                        imported.Add(importKey);
+                    }
+                    finally { function.Dispose(); }
                 }
-                try
+                // ReadTable already serialized named references; dependency import does not
+                // change this prototype, so another detach/serialize pass is unnecessary.
                 {
-                    if (!ImportDependencies(function.Typid, source, new HashSet<string>(), new HashSet<ulong>()))
-                    {
-                        diagnostic($"[schema-sdk] {table.ClassName} slot {index}: unresolved prototype dependencies/this; fallback.");
-                        continue;
-                    }
-                    var portable = SdkPortableType.Capture(ref function, source);
-                    if (portable == null)
-                    {
-                        diagnostic($"[schema-sdk] {table.ClassName} slot {index}: cannot export prototype; fallback.");
-                        continue;
-                    }
+                    var portable = match.Slot.Prototype;
                     if (!portable.Restore(out var check))
                     {
                         check.Dispose();
@@ -295,11 +306,11 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
                     }
                     finally { check.Dispose(); }
                 }
-                finally { function.Dispose(); }
             }
         }
         diagnostic($"[schema-sdk] sdk-slots={result.Count}, inherited-slots={inherited}, " +
-            $"fallback-slots={tables.Sum(t => t.Functions.Count) - result.Count}.");
+            $"fallback-slots={tables.Sum(t => t.Functions.Count) - result.Count}, " +
+            $"dependency-walks={dependencyWalks}, resolve-seconds={elapsed.Elapsed.TotalSeconds:F3}.");
         return result;
     }
 
@@ -329,8 +340,7 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
             if (name.Length != 0)
             {
                 // Built-in/base-TIL aliases need not have an IDB ordinal (e.g. uint).
-                if (LoadType(IdaNative.get_idati(), name, out var existing)) { existing.Dispose(); return true; }
-                existing.Dispose();
+                if (HasNamedType(IdaNative.get_idati(), name)) return true;
                 if (!importing.Add(name)) return true;
                 if (IdaNative.get_tinfo_property(id, 5) != 0)
                     return ImportForward(name, (byte)IdaNative.get_tinfo_property(id, 290));
@@ -427,29 +437,31 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
         }
     }
 
+    private static bool HasNamedType(void* til, string name)
+    {
+        byte* native = Utf8.Allocate(name);
+        try { return IdaNative.get_named_type(til, native, 1, null, null, null, null, null, null) != 0; }
+        finally { Utf8.Free(native); }
+    }
+
     internal static bool AdjustThis(ref TypeInfo function, string owner)
     {
         if (IdaNative.get_tinfo_property(function.Typid, 23) is 0 or > 255) return false;
         TypeInfo oldThis = new() { Typid = (ulong)IdaNative.get_tinfo_property(function.Typid, 25) };
-        TypeInfo objectType = default;
-        string qualifiers;
+        TypeInfo oldObject = default, objectType = default, pointer = default;
         try
         {
             if ((IdaNative.get_tinfo_property(oldThis.Typid, 1) & 0x0f) != 10) return false;
-            objectType.Typid = (ulong)IdaNative.get_tinfo_property(oldThis.Typid, 9);
-            nuint kind = IdaNative.get_tinfo_property(objectType.Typid, 1);
-            qualifiers = ((kind & 0x40) != 0 ? "const " : "") + ((kind & 0x80) != 0 ? "volatile " : "");
-        }
-        finally { objectType.Dispose(); oldThis.Dispose(); }
-        byte* declaration = Utf8.Allocate($"{qualifiers}{owner} *__s2_this;");
-        TypeInfo pointer = default;
-        try
-        {
-            if (IdaNative.parse_decl(&pointer, null, IdaNative.get_idati(), declaration, 1 | 8 | 128) == 0) return false;
+            oldObject.Typid = (ulong)IdaNative.get_tinfo_property(oldThis.Typid, 9);
+            ulong qualifiers = (ulong)IdaNative.get_tinfo_property(oldObject.Typid, 1) & 0xc0;
+            if (!LoadType(IdaNative.get_idati(), owner, out objectType)) return false;
+            // IDA SDK tinfo_t::set_const/set_volatile set these bits directly on typid.
+            objectType.Typid |= qualifiers;
+            if (!SchemaVTableTypes.Pointer(ref objectType, out pointer)) return false;
             fixed (TypeInfo* target = &function)
                 return IdaNative.set_tinfo_property4(target, 31, 0, (nuint)(void*)&pointer, 0, 0) == 0;
         }
-        finally { pointer.Dispose(); Utf8.Free(declaration); }
+        finally { pointer.Dispose(); objectType.Dispose(); oldObject.Dispose(); oldThis.Dispose(); }
     }
 
     public void Dispose()
