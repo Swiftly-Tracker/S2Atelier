@@ -665,7 +665,6 @@ internal static unsafe class IdaNativeBinder_V93
         if (NativeLibrary.TryGetExport(idaHandle, "get_reftype_by_size", out nint pget_reftype_by_size)) IdaNative._get_reftype_by_size = (delegate* unmanaged[Cdecl]<nuint, byte>)pget_reftype_by_size;
         if (NativeLibrary.TryGetExport(idaHandle, "get_reg_name", out nint pget_reg_name)) IdaNative._get_reg_name = (delegate* unmanaged[Cdecl]<QString*, int, nuint, int, nint>)pget_reg_name;
         if (NativeLibrary.TryGetExport(idaHandle, "get_root_filename", out nint pget_root_filename)) IdaNative._get_root_filename = (delegate* unmanaged[Cdecl]<byte*, nuint, nint>)pget_root_filename;
-        if (NativeLibrary.TryGetExport(idaHandle, "get_scalar_bt", out nint pget_scalar_bt)) IdaNative._get_scalar_bt = (delegate* unmanaged[Cdecl]<int, byte>)pget_scalar_bt;
         if (NativeLibrary.TryGetExport(idaHandle, "get_segm_base", out nint pget_segm_base)) IdaNative._get_segm_base = (delegate* unmanaged[Cdecl]<void*, ulong>)pget_segm_base;
         if (NativeLibrary.TryGetExport(idaHandle, "get_segm_by_name", out nint pget_segm_by_name)) IdaNative._get_segm_by_name = (delegate* unmanaged[Cdecl]<byte*, void*>)pget_segm_by_name;
         if (NativeLibrary.TryGetExport(idaHandle, "get_segm_by_sel", out nint pget_segm_by_sel)) IdaNative._get_segm_by_sel = (delegate* unmanaged[Cdecl]<ulong, void*>)pget_segm_by_sel;
@@ -1299,8 +1298,6 @@ internal static unsafe class IdaNativeBinder_V93
         if (NativeLibrary.TryGetExport(idaHandle, "revert_ida_decisions", out nint prevert_ida_decisions)) IdaNative._revert_ida_decisions = (delegate* unmanaged[Cdecl]<ulong, ulong, void>)prevert_ida_decisions;
         if (NativeLibrary.TryGetExport(idaHandle, "revert_metadata", out nint prevert_metadata)) IdaNative._revert_metadata = (delegate* unmanaged[Cdecl]<ulong, byte>)prevert_metadata;
         if (NativeLibrary.TryGetExport(idaHandle, "rotate_left", out nint protate_left)) IdaNative._rotate_left = (delegate* unmanaged[Cdecl]<ulong, int, nuint, nuint, ulong>)protate_left;
-        if (NativeLibrary.TryGetExport(idaHandle, "round_down_power2", out nint pround_down_power2)) IdaNative._round_down_power2 = (delegate* unmanaged[Cdecl]<uint, uint>)pround_down_power2;
-        if (NativeLibrary.TryGetExport(idaHandle, "round_up_power2", out nint pround_up_power2)) IdaNative._round_up_power2 = (delegate* unmanaged[Cdecl]<uint, uint>)pround_up_power2;
         if (NativeLibrary.TryGetExport(idaHandle, "run_plugin", out nint prun_plugin)) IdaNative._run_plugin = (delegate* unmanaged[Cdecl]<void*, nuint, byte>)prun_plugin;
         if (NativeLibrary.TryGetExport(idaHandle, "same_value_jpt", out nint psame_value_jpt)) IdaNative._same_value_jpt = (delegate* unmanaged[Cdecl]<void*, void*, int, byte>)psame_value_jpt;
         if (NativeLibrary.TryGetExport(idaHandle, "sanitize_file_name", out nint psanitize_file_name)) IdaNative._sanitize_file_name = (delegate* unmanaged[Cdecl]<byte*, nuint, byte>)psanitize_file_name;

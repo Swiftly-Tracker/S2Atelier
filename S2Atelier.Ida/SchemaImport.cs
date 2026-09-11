@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using S2Atelier.Ida.Generated;
@@ -46,6 +47,12 @@ public static unsafe class SchemaImport
         string hl2SdkPath,
         string requestedProject)
     {
+        var stageClock = Stopwatch.StartNew();
+        void Stage(string name)
+        {
+            Console.Error.WriteLine($"[schema-timing] {name}: {stageClock.Elapsed.TotalSeconds:F3}s");
+            stageClock.Restart();
+        }
         SchemaTargetPlatform platform = DetectTargetPlatform();
         SchemaDatabase database = SchemaDatabase.Load(sdkJsonPath);
         SchemaSelection? selection = database.Select(requestedProject, binaryPath);
@@ -58,6 +65,7 @@ public static unsafe class SchemaImport
 
         VTableScan scan = ScanVTables(selection, platform);
         SchemaHeaderResult header = SchemaHeaderGenerator.Generate(selection, platform, scan.PolymorphicClasses);
+        Stage("load/scan/header");
         string tempDirectory = Path.Combine(Path.GetTempPath(), $"s2atelier-schema-{Guid.NewGuid():N}");
         string tempHeader = Path.Combine(tempDirectory, "schema.hpp");
         bool keepHeader = false;
@@ -69,7 +77,7 @@ public static unsafe class SchemaImport
             // although schema layout only needs the replacement enum emitted by our preamble.
             File.WriteAllText(Path.Combine(tempDirectory, "network_connection.pb.h"),
                 "#pragma once\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: false);
+            ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: false, tempDirectory);
             int preflightErrors = ParseHeader(tempHeader, testOnly: true, printDiagnostics: true);
             if (preflightErrors != 0)
             {
@@ -89,7 +97,7 @@ public static unsafe class SchemaImport
 
             // Layout assertions belong to preflight. Suppress them during the write pass so an
             // SDK-version mismatch cannot prevent otherwise valid declarations from reaching IDA.
-            ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: true);
+            ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: true, tempDirectory);
             int importErrors = ParseHeader(tempHeader, testOnly: false, printDiagnostics: preflightErrors == 0);
             int clangErrors = Math.Max(preflightErrors, importErrors);
             keepHeader |= importErrors != 0;
@@ -100,13 +108,18 @@ public static unsafe class SchemaImport
                     $"generated header retained for diagnosis: {tempHeader}");
             }
             int importedTypes = CountAvailableTypes(header.ImportedTypeNames);
+            Stage("schema preflight/import");
 
             SchemaVTableTypes.PrepareClassVptrs(selection, scan.PolymorphicClasses, Console.Error.WriteLine);
             scan = ResolveTableLayouts(scan);
+            Stage("class vptr/layout resolution");
             using var sdk = Hl2SdkVTables.Load(hl2SdkPath, platform, selection, scan.Tables, Console.Error.WriteLine);
+            Stage("SDK header load");
             var slots = sdk.Resolve(scan.Tables, selection);
+            Stage("SDK prototype resolution");
             VTableBindingSummary sdkBinding = SdkFunctionBinding.Bind(scan.Tables, slots,
                 scan.PureCallAddresses, scan.UnresolvedThisAddresses, Console.Error.WriteLine);
+            Stage("SDK function binding");
             // SDK candidates, including protected/conflicting addresses, must not be rewritten by fallback.
             var sdkAddresses = scan.Tables.SelectMany(table => table.Functions
                 .Where((_, index) => slots.ContainsKey((table.AddressPoint, index)))).ToHashSet();
@@ -118,7 +131,9 @@ public static unsafe class SchemaImport
             }, selection);
             var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
                 sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts);
+            Stage("fallback function binding");
             VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine, slots));
+            Stage("vtable type binding");
             Console.Error.WriteLine(
                 $"[schema] {Path.GetFileName(binaryPath)}: project={selection.Project}, types={importedTypes}, " +
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
@@ -187,7 +202,8 @@ public static unsafe class SchemaImport
     internal static void ConfigureClang(
         string hl2SdkPath,
         SchemaTargetPlatform platform,
-        bool skipLayoutAssertions)
+        bool skipLayoutAssertions,
+        string? generatedIncludeDirectory = null)
     {
         string[] includeDirectories =
         [
@@ -209,7 +225,7 @@ public static unsafe class SchemaImport
 
         var arguments = new List<string>
         {
-            "-x", "c++", "-std=c++17", "-ferror-limit=100", "-Wno-c++11-narrowing", "-Wno-invalid-offsetof",
+            "-x", "c++", "-std=c++17", "-U__tuple", "-frtti", "-ferror-limit=100", "-Wno-c++11-narrowing", "-Wno-invalid-offsetof",
         };
         if (skipLayoutAssertions)
         {
@@ -233,10 +249,27 @@ public static unsafe class SchemaImport
             [
                 "-target", "x86_64-unknown-linux-gnu", "-DPOSIX", "-DLINUX", "-DCOMPILER_GCC",
                 "-DPLATFORM_64BITS", "-DX64BITS", "-D_CRT_USE_BUILTIN_OFFSETOF=1",
+                "-Dstricmp=strcasecmp", "-Dstrnicmp=strncasecmp",
             ]);
         }
+        if (generatedIncludeDirectory != null) arguments.Add("-I" + QuoteArgument(generatedIncludeDirectory));
         foreach (string directory in includeDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            arguments.Add("-I" + QuoteArgument(directory));
+        }
+
+        // Container installations do not have the compiler discovery/registry setup of
+        // a developer workstation. Allow explicitly provisioned compiler headers.
+        string? resourceDirectory = Environment.GetEnvironmentVariable("S2ATELIER_CLANG_RESOURCE_DIR");
+        if (!string.IsNullOrWhiteSpace(resourceDirectory))
+        {
+            arguments.Add("-I" + QuoteArgument(Path.Combine(resourceDirectory, "include")));
+        }
+        string? systemIncludes = Environment.GetEnvironmentVariable("S2ATELIER_CLANG_INCLUDE_PATH");
+        foreach (string directory in (systemIncludes ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            // IDAClang accepts joined -I arguments; standalone -isystem is
+            // filtered out and would turn the following path into another input.
             arguments.Add("-I" + QuoteArgument(directory));
         }
 

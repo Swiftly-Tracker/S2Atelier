@@ -17,8 +17,14 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<byte*, int> _add_encoding;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte*, byte, int, byte> _add_entry;
     internal static delegate* unmanaged[Cdecl]<void*, long, ushort, ulong, byte> _add_frame;
+    internal static delegate* unmanaged[Cdecl]<ulong, long, ushort, ulong, byte> _add_frame_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, ulong, TypeInfo*, void*, uint, byte> _add_frame_member;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, ulong, TypeInfo*, void*, uint, byte> _add_frame_member_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, long, byte> _add_func_auto_stkpnt;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _add_func_ex;
+    internal static delegate* unmanaged[Cdecl]<ulong, int, TypeInfo*, byte*, void> _add_func_regarg;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, byte*, byte*, byte*, int> _add_func_regvar;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _add_function_ex;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte*, byte*, byte*, uint, byte> _add_hidden_range;
     internal static delegate* unmanaged[Cdecl]<byte*, void*, void*> _add_idc_class;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _add_idc_func;
@@ -29,14 +35,18 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, int, TypeInfo*, byte*, void> _add_regarg;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte*, byte*, byte*, int> _add_regvar;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, byte*, byte*, int, byte> _add_segm;
+    internal static delegate* unmanaged[Cdecl]<void*, int, byte> _add_segment_ex;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _add_segment_translation;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte*, byte> _add_sourcefile;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _add_sourcefiles;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, nint, byte*> _add_spaces;
     internal static delegate* unmanaged[Cdecl]<void*, void*, long, int, byte> _add_stkvar;
     internal static delegate* unmanaged[Cdecl]<byte*, int, int> _add_til;
     internal static delegate* unmanaged[Cdecl]<void*, int> _add_tryblk;
     internal static delegate* unmanaged[Cdecl]<ulong, long, byte> _add_user_stkpnt;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, void> _add_word;
+    internal static delegate* unmanaged[Cdecl]<ulong, long, long> _adjust_segment_diff;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _adjust_segment_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _align_down_to_stack;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _align_up_to_stack;
     internal static delegate* unmanaged[Cdecl]<void*, int, uint> _alloc_type_ordinals;
@@ -46,9 +56,11 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, byte*, byte, byte> _append_cmt;
     internal static delegate* unmanaged[Cdecl]<QString*, long, byte, void> _append_disp;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _append_func_tail;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, byte> _append_func_tail_ea;
     internal static delegate* unmanaged[Cdecl]<QString*, long*, int, ulong*, int, ulong, long, byte, ulong> _append_struct_fields;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _append_tinfo_covered;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _append_to_flowchart;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _append_to_func_flow_chart;
     internal static delegate* unmanaged[Cdecl]<ulong, TypeInfo*, byte> _apply_callee_tinfo;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte*, int, byte> _apply_cdecl;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, byte, byte> _apply_fixup;
@@ -105,9 +117,12 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<QString*, void*, byte*, void> _build_plugin_options;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _build_snapshot_tree;
     internal static delegate* unmanaged[Cdecl]<QString*, void*, long, nint> _build_stkvar_name;
+    internal static delegate* unmanaged[Cdecl]<QString*, ulong, long, nint> _build_stkvar_name_ea;
     internal static delegate* unmanaged[Cdecl]<void*, void*, ulong, ulong, void> _build_stkvar_xrefs;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, ulong, void> _build_stkvar_xrefs_ea;
     internal static delegate* unmanaged[Cdecl]<void> _build_strlist;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _calc_arglocs;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _calc_basevalue;
     internal static delegate* unmanaged[Cdecl]<ulong, uint> _calc_bg_color;
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, TypeInfo*, int, nint> _calc_c_cpp_name;
     internal static delegate* unmanaged[Cdecl]<uint, void*, nuint, uint> _calc_crc32;
@@ -116,8 +131,11 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, uint> _calc_file_crc32;
     internal static delegate* unmanaged[Cdecl]<ushort, int> _calc_fixup_size;
     internal static delegate* unmanaged[Cdecl]<void*, long, void*, void*, long> _calc_frame_offset;
+    internal static delegate* unmanaged[Cdecl]<ulong, long, void*, void*, long> _calc_frame_offset_ea;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void*, void*, ulong> _calc_func_metadata;
     internal static delegate* unmanaged[Cdecl]<void*, ulong> _calc_func_size;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _calc_func_size_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, ulong, void*, ulong> _calc_function_metadata;
     internal static delegate* unmanaged[Cdecl]<int, int> _calc_idasgn_state;
     internal static delegate* unmanaged[Cdecl]<ulong, int> _calc_max_align;
     internal static delegate* unmanaged[Cdecl]<ulong, int, ulong> _calc_max_item_end;
@@ -129,8 +147,10 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong*, ulong*, ulong, void*, long, byte> _calc_reference_data;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _calc_retloc;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, ulong> _calc_stkvar_struc_offset;
+    internal static delegate* unmanaged[Cdecl]<ulong, void*, int, ulong> _calc_stkvar_struc_offset_ea;
     internal static delegate* unmanaged[Cdecl]<void*, void*, ulong, void*, byte> _calc_switch_cases;
     internal static delegate* unmanaged[Cdecl]<void*, ulong*, ulong> _calc_thunk_func_target;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong*, ulong> _calc_thunk_function_target;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _calc_tinfo_gaps;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void*, int, byte> _calc_varglocs;
     internal static delegate* unmanaged[Cdecl]<byte*, int> _call_system;
@@ -142,6 +162,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, void*, void*, byte*> _cfgopt_t__apply3;
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, int, int, byte> _change_codepage;
     internal static delegate* unmanaged[Cdecl]<void*, byte, int> _change_segment_status;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte, int> _change_segment_status_by_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, int> _change_storage_type;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, int> _check_flat_jump_table;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void> _check_spoiled_jpt;
@@ -173,6 +194,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, uint, void*, int, int> _compact_numbered_types;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _compact_til;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int> _compare_arglocs;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, int> _compare_bpt_locs;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, byte> _compare_tinfo;
     internal static delegate* unmanaged[Cdecl]<byte*, QString*, int, byte> _compile_idc_file;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, QString*, void*, byte, byte> _compile_idc_snippet;
@@ -193,11 +215,13 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, ulong, byte> _create_data;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void*> _create_dirtree;
     internal static delegate* unmanaged[Cdecl]<void> _create_filename_cmt;
+    internal static delegate* unmanaged[Cdecl]<void*, void> _create_func_flow_chart;
     internal static delegate* unmanaged[Cdecl]<void*, void*> _create_generic_linput;
     internal static delegate* unmanaged[Cdecl]<void*, void*, byte> _create_idcv_ref;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, int> _create_insn;
     internal static delegate* unmanaged[Cdecl]<byte**, nuint, void*, uint, void*> _create_lexer;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, void*> _create_memory_linput;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, byte> _create_multirange_func_flow_chart;
     internal static delegate* unmanaged[Cdecl]<void*, void*, byte> _create_multirange_qflow_chart;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, int, byte*, byte, uint, void*, byte, void*> _create_nodeval_merge_handler2;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, byte*, void*, nuint, byte, void> _create_nodeval_merge_handlers;
@@ -222,6 +246,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, byte, uint, TypeInfo*, byte> _decorate_name;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int> _deep_copy_idcv;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, long, TypeInfo*, void*, byte> _define_stkvar;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, long, TypeInfo*, void*, byte> _define_stkvar_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, void> _del_aflags;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte, byte> _del_cref;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, void> _del_debug_names;
@@ -230,7 +255,10 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte> _del_extra_cmt;
     internal static delegate* unmanaged[Cdecl]<ulong, void> _del_fixup;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _del_frame;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte> _del_frame_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _del_func;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, byte*, int> _del_func_regvar;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _del_func_stkpnt;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _del_hidden_range;
     internal static delegate* unmanaged[Cdecl]<int, int> _del_idasgn;
     internal static delegate* unmanaged[Cdecl]<byte*, byte> _del_idc_func;
@@ -260,6 +288,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void> _delete_dirtree;
     internal static delegate* unmanaged[Cdecl]<ulong, int, void> _delete_extra_cmts;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _delete_frame_members;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, byte> _delete_frame_members_ea;
     internal static delegate* unmanaged[Cdecl]<void> _delete_imports;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, void> _delete_switch_table;
     internal static delegate* unmanaged[Cdecl]<int, byte> _delinf;
@@ -285,6 +314,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void*, void*, int> _dirtree_find_entry;
     internal static delegate* unmanaged[Cdecl]<void*, void*, byte*, byte> _dirtree_findfirst;
     internal static delegate* unmanaged[Cdecl]<void*, void*, byte> _dirtree_findnext;
+    internal static delegate* unmanaged[Cdecl]<void*, byte*, byte, int> _dirtree_fold_common_prefix;
     internal static delegate* unmanaged[Cdecl]<QString*, void*, void*, uint, byte> _dirtree_get_abspath_by_cursor;
     internal static delegate* unmanaged[Cdecl]<QString*, void*, byte*, byte> _dirtree_get_abspath_by_relpath;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, nint> _dirtree_get_dir_size;
@@ -340,6 +370,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void*, int> _enum_type_data_t__get_value_repr;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int> _enum_type_data_t__set_value_repr;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, byte*, byte*, void*, int> _enumerate_files;
+    internal static delegate* unmanaged[Cdecl]<ulong, void*, ulong> _enumerate_segments_with_selector_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, byte*, byte*, nuint, int, byte> _equal_bytes;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte*, QString*, byte> _eval_expr;
     internal static delegate* unmanaged[Cdecl]<long*, ulong, byte*, QString*, byte> _eval_expr_long;
@@ -358,6 +389,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte*, void> _extract_type_from_metadata;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte*, void> _extract_user_stkpnts_from_metadata;
     internal static delegate* unmanaged[Cdecl]<void*, nuint, int> _fc_calc_block_type;
+    internal static delegate* unmanaged[Cdecl]<void*, nuint, int> _fc_calc_func_block_type;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte*, int, int, int, ulong> _find_binary;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte, int, ulong> _find_byte;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte, int, ulong> _find_byter;
@@ -375,6 +407,8 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, ulong> _find_free_chunk;
     internal static delegate* unmanaged[Cdecl]<ulong> _find_free_selector;
     internal static delegate* unmanaged[Cdecl]<void*, int, int> _find_func_bounds;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, ulong, byte*, byte*, nint> _find_func_regvar;
+    internal static delegate* unmanaged[Cdecl]<void*, int, int> _find_function_bounds;
     internal static delegate* unmanaged[Cdecl]<byte*, void*> _find_idc_class;
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, int, byte> _find_idc_func;
     internal static delegate* unmanaged[Cdecl]<byte*, void*> _find_idc_gvar;
@@ -388,6 +422,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte*, int, ulong> _find_reg_access;
     internal static delegate* unmanaged[Cdecl]<ulong*, ulong, int, int> _find_reg_value;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, int, byte> _find_reg_value_info;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte*, int, byte> _find_regname_value_info;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte*, byte*, void*> _find_regvar;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _find_selector;
     internal static delegate* unmanaged[Cdecl]<long*, ulong, int, int> _find_sp_value;
@@ -429,6 +464,26 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void*, byte> _func_parent_iterator_set;
     internal static delegate* unmanaged[Cdecl]<void*, void*, ulong, byte> _func_tail_iterator_set;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _func_tail_iterator_set_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, byte*, void*, byte> _function_item_iterator_decode_preceding_insn;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, byte> _function_item_iterator_decode_prev_insn;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, void*, byte> _function_item_iterator_next;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, void*, byte> _function_item_iterator_prev;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, void*, byte> _function_item_iterator_succ;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_parent_iterator_first;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_parent_iterator_last;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_parent_iterator_next;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong> _function_parent_iterator_parent;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_parent_iterator_prev;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _function_parent_iterator_set;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, void> _function_tail_iterator_chunk;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_tail_iterator_first;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_tail_iterator_last;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_tail_iterator_main;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_tail_iterator_next;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _function_tail_iterator_prev;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _function_tail_iterator_set;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _function_tail_iterator_set_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte> _function_tail_iterator_set_range;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, int, int> _fwritebytes;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, byte*, ulong, ulong, int, int, byte> _gen_complex_call_chart;
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, byte, uint, TypeInfo*, byte> _gen_decorate_name;
@@ -436,6 +491,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<int, void*, ulong, ulong, int, int> _gen_file;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, void> _gen_fix_fixups;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, void*, ulong, ulong, int, byte> _gen_flow_graph;
+    internal static delegate* unmanaged[Cdecl]<byte*, byte*, ulong, ulong, ulong, int, byte> _gen_flow_graph_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, void> _gen_gdl;
     internal static delegate* unmanaged[Cdecl]<void*, nuint, byte> _gen_rand_buf;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, byte*, int, byte> _gen_simple_call_chart;
@@ -514,8 +570,11 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<int, byte*> _get_error_string;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, int, nint> _get_extra_cmt;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_fchunk;
+    internal static delegate* unmanaged[Cdecl]<int, ulong> _get_fchunk_ea_by_num;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_fchunk_info;
     internal static delegate* unmanaged[Cdecl]<ulong, int> _get_fchunk_num;
     internal static delegate* unmanaged[Cdecl]<nuint> _get_fchunk_qty;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_fchunk_start;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*> _get_file_ext;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, nuint> _get_file_type_name;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_first_cref_from;
@@ -527,7 +586,9 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong> _get_first_fixup_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, int, int> _get_first_free_extra_cmtidx;
     internal static delegate* unmanaged[Cdecl]<void*> _get_first_hidden_range;
+    internal static delegate* unmanaged[Cdecl]<ulong> _get_first_hidden_range_ea;
     internal static delegate* unmanaged[Cdecl]<void*> _get_first_seg;
+    internal static delegate* unmanaged[Cdecl]<ulong> _get_first_segment_ea;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_fixup;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, void*, byte*> _get_fixup_desc;
     internal static delegate* unmanaged[Cdecl]<ushort, void*> _get_fixup_handler;
@@ -538,22 +599,53 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, int, nint> _get_forced_operand;
     internal static delegate* unmanaged[Cdecl]<void*, ushort, int> _get_fpvalue_kind;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, void> _get_frame_part;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, int, byte> _get_frame_part_ea;
     internal static delegate* unmanaged[Cdecl]<void*, int> _get_frame_retsize;
+    internal static delegate* unmanaged[Cdecl]<ulong, int> _get_frame_retsize_ea;
     internal static delegate* unmanaged[Cdecl]<void*, ulong> _get_frame_size;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_frame_size_ea;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, long*, void*, void*, long, nint> _get_frame_var;
     internal static delegate* unmanaged[Cdecl]<byte*, ulong> _get_free_disk_space;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_func;
     internal static delegate* unmanaged[Cdecl]<void*, int> _get_func_bitness;
+    internal static delegate* unmanaged[Cdecl]<ulong, int> _get_func_bitness_ea;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int> _get_func_chunknum;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, int> _get_func_chunknum_ea;
     internal static delegate* unmanaged[Cdecl]<QString*, void*, byte, nint> _get_func_cmt;
+    internal static delegate* unmanaged[Cdecl]<QString*, ulong, byte, nint> _get_func_cmt_ea;
+    internal static delegate* unmanaged[Cdecl]<nuint, ulong> _get_func_ea_by_num;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, long> _get_func_effective_spd;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, int, byte> _get_func_entry_info;
+    internal static delegate* unmanaged[Cdecl]<void*, nuint, int, byte> _get_func_entry_info_by_num;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_func_flags;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, void*, byte> _get_func_frame;
+    internal static delegate* unmanaged[Cdecl]<TypeInfo*, ulong, byte> _get_func_frame_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_func_llabel_qty;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_func_llabels;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, nint> _get_func_name;
     internal static delegate* unmanaged[Cdecl]<ulong, int> _get_func_num;
     internal static delegate* unmanaged[Cdecl]<nuint> _get_func_qty;
     internal static delegate* unmanaged[Cdecl]<void*, void*, ulong> _get_func_ranges;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong> _get_func_ranges_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, nuint, byte> _get_func_regarg;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_func_regarg_qty;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_func_regargs;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, nint, byte> _get_func_regvar;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_func_regvar_qty;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_func_regvars;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, long> _get_func_sp_delta;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, long> _get_func_spd;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_func_start;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_func_stkpnt_qty;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_func_stkpnts;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_func_tail_info;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_func_tail_qty;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_func_tails;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_group_selector;
     internal static delegate* unmanaged[Cdecl]<void*> _get_hexdsp;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_hidden_range;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_hidden_range_info;
+    internal static delegate* unmanaged[Cdecl]<void*, int, byte> _get_hidden_range_info_by_num;
     internal static delegate* unmanaged[Cdecl]<ulong, int> _get_hidden_range_num;
     internal static delegate* unmanaged[Cdecl]<int> _get_hidden_range_qty;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, int, int> _get_ida_subdirs;
@@ -583,8 +675,10 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, byte> _get_item_refinfo;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, int, ulong> _get_jtable_target;
     internal static delegate* unmanaged[Cdecl]<void*> _get_last_hidden_range;
+    internal static delegate* unmanaged[Cdecl]<ulong> _get_last_hidden_range_ea;
     internal static delegate* unmanaged[Cdecl]<int> _get_last_pfxlen;
     internal static delegate* unmanaged[Cdecl]<void*> _get_last_seg;
+    internal static delegate* unmanaged[Cdecl]<ulong> _get_last_segment_ea;
     internal static delegate* unmanaged[Cdecl]<int*, int*, int*, byte> _get_library_version;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, nint> _get_loader_name;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*> _get_loader_name_from_dll;
@@ -609,13 +703,19 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _get_next_dref_from;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _get_next_dref_to;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_next_fchunk;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_next_fchunk_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_next_fchunk_info;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _get_next_fcref_from;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _get_next_fcref_to;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_next_fixup_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_next_func;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong> _get_next_func_addr;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_next_func_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _get_next_function_addr;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_next_hidden_range;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_next_hidden_range_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_next_seg;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_next_segment_ea;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, int, nint> _get_nice_colored_name;
     internal static delegate* unmanaged[Cdecl]<nuint, ulong> _get_nlist_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_nlist_idx;
@@ -647,11 +747,17 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, TypeInfo*, ulong> _get_possible_item_varsize;
     internal static delegate* unmanaged[Cdecl]<QString*, void*, nint> _get_predef_insn_cmt;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_prev_fchunk;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_prev_fchunk_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_prev_fchunk_info;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_prev_fixup_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_prev_func;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong> _get_prev_func_addr;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_prev_func_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong> _get_prev_function_addr;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_prev_hidden_range;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_prev_hidden_range_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_prev_seg;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_prev_segment_ea;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, byte> _get_prev_sreg_range;
     internal static delegate* unmanaged[Cdecl]<byte, ulong, ulong> _get_problem;
     internal static delegate* unmanaged[Cdecl]<QString*, byte, ulong, nint> _get_problem_desc;
@@ -659,13 +765,13 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<int> _get_qerrno;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_qword;
     internal static delegate* unmanaged[Cdecl]<ulong, int, int> _get_radix;
+    internal static delegate* unmanaged[Cdecl]<void*, byte*, byte> _get_realtype;
     internal static delegate* unmanaged[Cdecl]<QString*, byte> _get_redo_action_label;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, byte> _get_refinfo;
     internal static delegate* unmanaged[Cdecl]<void*, void> _get_refinfo_descs;
     internal static delegate* unmanaged[Cdecl]<nuint, byte> _get_reftype_by_size;
     internal static delegate* unmanaged[Cdecl]<QString*, int, nuint, int, nint> _get_reg_name;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, nint> _get_root_filename;
-    internal static delegate* unmanaged[Cdecl]<int, byte> _get_scalar_bt;
     internal static delegate* unmanaged[Cdecl]<void*, ulong> _get_segm_base;
     internal static delegate* unmanaged[Cdecl]<byte*, void*> _get_segm_by_name;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _get_segm_by_sel;
@@ -675,8 +781,19 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, ulong> _get_segm_para;
     internal static delegate* unmanaged[Cdecl]<int> _get_segm_qty;
     internal static delegate* unmanaged[Cdecl]<byte, byte*> _get_segment_alignment;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_segment_base;
+    internal static delegate* unmanaged[Cdecl]<QString*, ulong, nint> _get_segment_class;
     internal static delegate* unmanaged[Cdecl]<QString*, void*, byte, nint> _get_segment_cmt;
+    internal static delegate* unmanaged[Cdecl]<QString*, ulong, byte, nint> _get_segment_cmt_by_ea;
     internal static delegate* unmanaged[Cdecl]<byte, byte*> _get_segment_combination;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_segment_ea;
+    internal static delegate* unmanaged[Cdecl]<byte*, ulong> _get_segment_ea_by_name;
+    internal static delegate* unmanaged[Cdecl]<int, ulong> _get_segment_ea_by_num;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_segment_ea_by_sel;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, int, byte> _get_segment_info;
+    internal static delegate* unmanaged[Cdecl]<void*, int, int, byte> _get_segment_info_by_num;
+    internal static delegate* unmanaged[Cdecl]<QString*, ulong, int, nint> _get_segment_name;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_segment_para;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, nint> _get_segment_translations;
     internal static delegate* unmanaged[Cdecl]<QString*, byte> _get_selected_parser_name;
     internal static delegate* unmanaged[Cdecl]<nuint> _get_selector_qty;
@@ -684,6 +801,8 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<int, void*> _get_server_connection2;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_source_linnum;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, byte*> _get_sourcefile;
+    internal static delegate* unmanaged[Cdecl]<QString*, ulong, void*, byte> _get_sourcefile_by_ea;
+    internal static delegate* unmanaged[Cdecl]<nuint> _get_sourcefiles_qty;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, long> _get_sp_delta;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, long> _get_spd;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, int, byte> _get_special_folder;
@@ -698,12 +817,17 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, uint> _get_str_type;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_strid;
     internal static delegate* unmanaged[Cdecl]<void*, nuint, byte> _get_strlist_item;
+    internal static delegate* unmanaged[Cdecl]<void*, nuint, byte> _get_strlist_item_ex;
     internal static delegate* unmanaged[Cdecl]<void*> _get_strlist_options;
     internal static delegate* unmanaged[Cdecl]<nuint> _get_strlist_qty;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, nuint, int, nuint*, int, nint> _get_strlit_contents;
     internal static delegate* unmanaged[Cdecl]<ulong*, long*, ulong, int, int> _get_stroff_path;
     internal static delegate* unmanaged[Cdecl]<long*, long*, ulong*, ulong, int, int> _get_struct_operand;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, nint> _get_switch_info;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong> _get_tail_owner;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint, ulong> _get_tail_referer;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint> _get_tail_referer_qty;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _get_tail_referers;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, byte> _get_tid_name;
     internal static delegate* unmanaged[Cdecl]<ulong, uint> _get_tid_ordinal;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, ulong, byte> _get_tinfo;
@@ -741,6 +865,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<nuint, void*> _getn_func;
     internal static delegate* unmanaged[Cdecl]<int, void*> _getn_hidden_range;
     internal static delegate* unmanaged[Cdecl]<ulong*, ulong*, int, byte> _getn_selector;
+    internal static delegate* unmanaged[Cdecl]<void*, nuint, byte> _getn_sourcefile;
     internal static delegate* unmanaged[Cdecl]<void*, int, int, byte> _getn_sreg_range;
     internal static delegate* unmanaged[Cdecl]<int, void*> _getnseg;
     internal static delegate* unmanaged[Cdecl]<ulong, void*> _getseg;
@@ -751,6 +876,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ushort, uint, byte> _handle_fixups_in_macro;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _has_backup_metadata;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _has_external_refs;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _has_external_refs_ea;
     internal static delegate* unmanaged[Cdecl]<ushort, uint, byte> _has_insn_feature;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _has_jump_or_flow_xref;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, void*, ulong, nuint> _hexplace_t__ea2str;
@@ -770,6 +896,9 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, int> _ieee2cpu;
     internal static delegate* unmanaged[Cdecl]<void*, void*, ushort, int> _ieee_realcvt;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, ulong, void*, byte*, void> _import_module;
+    internal static delegate* unmanaged[Cdecl]<byte> _indexer_is_enabled;
+    internal static delegate* unmanaged[Cdecl]<nuint, QString*, void*, void*> _indexer_match;
+    internal static delegate* unmanaged[Cdecl]<QString*, void*, void*> _indexer_match_all;
     internal static delegate* unmanaged[Cdecl]<int, byte**, int*, int> _init_database;
     internal static delegate* unmanaged[Cdecl]<int, void> _init_plugins;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, int, void> _insn_add_cref;
@@ -815,6 +944,9 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte> _is_fltnum;
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte> _is_forced_operand;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _is_func_locked;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_func_locked_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_function_entry;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_function_tail;
     internal static delegate* unmanaged[Cdecl]<byte*, byte> _is_ident;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_in_nlist;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _is_indirect_jump_insn;
@@ -827,6 +959,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_mapped;
     internal static delegate* unmanaged[Cdecl]<byte> _is_miniidb;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, int, ulong, ulong, byte> _is_name_defined_locally;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, int, ulong, ulong, byte> _is_name_defined_locally_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte> _is_numop;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_numop0;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_numop1;
@@ -836,8 +969,11 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_public_name;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_refresh_requested;
     internal static delegate* unmanaged[Cdecl]<void*, byte, byte> _is_ret_insn;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _is_same_fchunk;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _is_same_segment;
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte> _is_seg;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _is_segm_locked;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_segment_locked;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_spec_ea;
     internal static delegate* unmanaged[Cdecl]<byte, byte> _is_spec_segm;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_special_frame_member;
@@ -852,6 +988,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<byte*, byte> _is_valid_utf8;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, void*, ulong*, int> _is_varsize_item;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _is_weak_name;
+    internal static delegate* unmanaged[Cdecl]<ulong, void*, byte, void> _iterate_func_chunks_ea;
     internal static delegate* unmanaged[Cdecl]<int, byte*> _itext;
     internal static delegate* unmanaged[Cdecl]<void*, void> _jvalue_t_clear;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void> _jvalue_t_copy;
@@ -905,7 +1042,9 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, uint> _lochist_t_size;
     internal static delegate* unmanaged[Cdecl]<void> _lock_dbgmem_config;
     internal static delegate* unmanaged[Cdecl]<void*, byte, void> _lock_func_range;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte, void> _lock_func_range_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte, void> _lock_segm;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte, void> _lock_segment_by_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, int> _log2ceil;
     internal static delegate* unmanaged[Cdecl]<ulong, int> _log2floor;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, void*> _lookup_loc_converter2;
@@ -931,6 +1070,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, ulong, int, int> _move_segm;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, byte> _move_segm_start;
     internal static delegate* unmanaged[Cdecl]<int, byte*> _move_segm_strerror;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, int> _move_segment;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, byte*, ulong, byte> _name_requires_qualifier;
     internal static delegate* unmanaged[Cdecl]<void*, byte**, byte*, void*, byte> _navstack_entry_t_deserialize;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void> _navstack_entry_t_serialize;
@@ -1236,9 +1376,11 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, void*, uint, void> _realtoasc;
     internal static delegate* unmanaged[Cdecl]<ulong, byte, void> _reanalyze_callers;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, byte, void> _reanalyze_function;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ulong, byte, void> _reanalyze_function_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _reanalyze_noret_flag;
     internal static delegate* unmanaged[Cdecl]<long, int, int> _rebase_program;
     internal static delegate* unmanaged[Cdecl]<void> _rebuild_nlist;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _recalc_func_spd_for_basic_block;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _recalc_spd;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _recalc_spd_for_basic_block;
     internal static delegate* unmanaged[Cdecl]<byte*, byte, void*, nuint, byte*, int, byte> _reg_bin_op;
@@ -1247,10 +1389,13 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<byte*, byte> _reg_delete_subkey;
     internal static delegate* unmanaged[Cdecl]<byte*, byte> _reg_delete_tree;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, byte> _reg_exists;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, int, int, byte> _reg_finder94_find_reg_value_info;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, void*, void*, ulong, void> _reg_finder94_make_rfop;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void*, void*, ulong, ulong, int, byte> _reg_finder_calc_op_addr;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _reg_finder_can_resolve_mem;
     internal static delegate* unmanaged[Cdecl]<void*, void> _reg_finder_ctr;
     internal static delegate* unmanaged[Cdecl]<void*, void> _reg_finder_dtr;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, int, void*, void*, int, byte, int, byte, void*, ulong, ulong, void> _reg_finder_emulate_binary_op_shifted;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void*, int, byte, void*, byte> _reg_finder_emulate_mem_read;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, int, void*, ulong, ulong, void> _reg_finder_emulate_unary_op;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong, int, void> _reg_finder_invalidate_cache;
@@ -1263,10 +1408,13 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte, byte> _reg_subkey_children;
     internal static delegate* unmanaged[Cdecl]<byte*, byte> _reg_subkey_exists;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, nuint, byte*, byte, void> _reg_update_strlist;
+    internal static delegate* unmanaged[Cdecl]<void*, QString*, void*, void> _reg_value_base_dstr;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, int> _reg_value_base_vals_union;
     internal static delegate* unmanaged[Cdecl]<void*, QString*, int, void*, void> _reg_value_def_dstr;
     internal static delegate* unmanaged[Cdecl]<void*, QString*, void*, void> _reg_value_info_dstr;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int> _reg_value_info_vals_union;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, void> _reg_write_strlist;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, int> _regarg_t__compare;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, byte, int> _regex_match;
     internal static delegate* unmanaged[Cdecl]<void*, uint> _register_custom_callcnv;
     internal static delegate* unmanaged[Cdecl]<void*, int> _register_custom_data_format;
@@ -1275,6 +1423,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, int> _register_custom_refinfo;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*, void*, void> _register_loc_converter2;
     internal static delegate* unmanaged[Cdecl]<int, void*, void*, byte> _register_post_event_visitor;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, int> _regvar_t__compare;
     internal static delegate* unmanaged[Cdecl]<byte*, byte, byte> _reload_file;
     internal static delegate* unmanaged[Cdecl]<void*, int, long, byte, void> _reloc_value;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte, byte> _relocate_relobj;
@@ -1284,23 +1433,24 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void> _remove_event_listener;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _remove_extlang;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _remove_func_tail;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _remove_func_tail_ea;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, byte**, void*, byte> _remove_tinfo_pointer;
     internal static delegate* unmanaged[Cdecl]<int, byte*, byte> _rename_encoding;
     internal static delegate* unmanaged[Cdecl]<ulong, byte*, int, byte> _rename_entry;
+    internal static delegate* unmanaged[Cdecl]<ulong, nint, byte*, int> _rename_func_regvar;
     internal static delegate* unmanaged[Cdecl]<void*, void*, byte*, int> _rename_regvar;
     internal static delegate* unmanaged[Cdecl]<void> _reorder_dummy_names;
     internal static delegate* unmanaged[Cdecl]<void*, TypeInfo*, int> _replace_ordinal_typerefs;
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, int, byte> _replace_tabs;
     internal static delegate* unmanaged[Cdecl]<ulong, byte, void> _request_refresh;
     internal static delegate* unmanaged[Cdecl]<void*, void> _reset_dirtree;
+    internal static delegate* unmanaged[Cdecl]<void*, void*, byte*, byte> _resolve_field_path;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte*> _resolve_typedef;
     internal static delegate* unmanaged[Cdecl]<int, void*> _retrieve_custom_argloc;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _revert_byte;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, void> _revert_ida_decisions;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _revert_metadata;
     internal static delegate* unmanaged[Cdecl]<ulong, int, nuint, nuint, ulong> _rotate_left;
-    internal static delegate* unmanaged[Cdecl]<uint, uint> _round_down_power2;
-    internal static delegate* unmanaged[Cdecl]<uint, uint> _round_up_power2;
     internal static delegate* unmanaged[Cdecl]<void*, nuint, byte> _run_plugin;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, byte> _same_value_jpt;
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, byte> _sanitize_file_name;
@@ -1313,6 +1463,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<byte*, nuint, byte*, byte, byte> _search_path;
     internal static delegate* unmanaged[Cdecl]<void*, long, long> _segm_adjust_diff;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ulong> _segm_adjust_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, QString*, byte> _segment_info_t__visible_name;
     internal static delegate* unmanaged[Cdecl]<ulong, byte> _segtype;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _sel2para;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _select_extlang;
@@ -1339,6 +1490,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, void> _set_default_dataseg;
     internal static delegate* unmanaged[Cdecl]<int, int, byte> _set_default_encoding_idx;
     internal static delegate* unmanaged[Cdecl]<void*, int, ulong, byte> _set_default_sreg_value;
+    internal static delegate* unmanaged[Cdecl]<ulong, int, ulong, byte> _set_default_sreg_value_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _set_dummy_name;
     internal static delegate* unmanaged[Cdecl]<ulong, byte*, int, byte> _set_entry_forwarder;
     internal static delegate* unmanaged[Cdecl]<int, nuint, void> _set_error_data;
@@ -1347,11 +1499,21 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, void*, void> _set_fixup;
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte*, byte> _set_forced_operand;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, TypeInfo*, void*, uint, byte> _set_frame_member_type;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, TypeInfo*, void*, uint, byte> _set_frame_member_type_ea;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, ushort, ulong, byte> _set_frame_size;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, ushort, ulong, byte> _set_frame_size_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, long, byte> _set_func_auto_spd;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte, byte> _set_func_cmt;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, byte, byte> _set_func_cmt_ea;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _set_func_end;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _set_func_entry_info;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte, byte> _set_func_flag;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _set_func_flags;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, int> _set_func_name_if_jumpfunc;
+    internal static delegate* unmanaged[Cdecl]<ulong, nint, byte*, int> _set_func_regvar_cmt;
+    internal static delegate* unmanaged[Cdecl]<ulong, nint, void*, int> _set_func_regvar_range;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int> _set_func_start;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, byte> _set_function_name_if_jumpfunc;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int> _set_group_selector;
     internal static delegate* unmanaged[Cdecl]<byte*, byte, byte> _set_header_path;
     internal static delegate* unmanaged[Cdecl]<int, int> _set_ida_state;
@@ -1395,7 +1557,13 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, byte> _set_segm_end;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, int, int> _set_segm_name;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int, byte> _set_segm_start;
+    internal static delegate* unmanaged[Cdecl]<ulong, nuint, byte> _set_segment_addressing;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _set_segment_base_ea;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, int, int> _set_segment_class;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte, void> _set_segment_cmt;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, byte, void> _set_segment_cmt_by_ea;
+    internal static delegate* unmanaged[Cdecl]<void*, int, byte> _set_segment_info;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte*, int, int> _set_segment_name;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, byte> _set_segment_translations;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, int> _set_selector;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong, void> _set_source_linnum;
@@ -1403,6 +1571,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, uint, void> _set_str_type;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, void> _set_switch_info;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _set_tail_owner;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _set_tail_owner_ea;
     internal static delegate* unmanaged[Cdecl]<int, byte> _set_target_assembler;
     internal static delegate* unmanaged[Cdecl]<ulong, TypeInfo*, byte> _set_tinfo;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, void*, byte, byte> _set_tinfo_attr;
@@ -1413,7 +1582,9 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, uint, byte, void> _set_type_choosable;
     internal static delegate* unmanaged[Cdecl]<uint, ulong, byte> _set_vftable_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte, void> _set_visible_func;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte, void> _set_visible_func_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte, void> _set_visible_segm;
+    internal static delegate* unmanaged[Cdecl]<ulong, byte, void> _set_visible_segment;
     internal static delegate* unmanaged[Cdecl]<ulong, void*, void> _set_xrefpos;
     internal static delegate* unmanaged[Cdecl]<int, nint, byte> _setinf;
     internal static delegate* unmanaged[Cdecl]<int, void*, nuint, byte> _setinf_buf;
@@ -1424,9 +1595,11 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, void> _show_name;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*> _skip_spaces;
     internal static delegate* unmanaged[Cdecl]<byte**, nuint, nuint> _skip_utf8;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, long> _soff_to_fpoff_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _sort_til;
     internal static delegate* unmanaged[Cdecl]<ulong, int, ulong, byte, byte, byte> _split_sreg_range;
     internal static delegate* unmanaged[Cdecl]<void*, void*, void> _std_out_segm_footer;
+    internal static delegate* unmanaged[Cdecl]<void*, ulong, void> _std_out_segment_footer;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, ulong, nuint> _stoa;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte*, byte> _store_til;
     internal static delegate* unmanaged[Cdecl]<ulong*, byte*, ulong, byte> _str2ea;
@@ -1442,12 +1615,15 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void*, void> _swap_idcvs;
     internal static delegate* unmanaged[Cdecl]<void*, void*, int, void> _swap_value;
     internal static delegate* unmanaged[Cdecl]<nuint, void*> _switch_dbctx;
+    internal static delegate* unmanaged[Cdecl]<void> _switch_to_rust;
     internal static delegate* unmanaged[Cdecl]<QString*, ulong, byte, void> _tag_addr;
     internal static delegate* unmanaged[Cdecl]<byte*, int, byte*> _tag_advance;
+    internal static delegate* unmanaged[Cdecl]<byte*, ulong> _tag_get_addr;
     internal static delegate* unmanaged[Cdecl]<QString*, byte*, int, nint> _tag_remove;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*> _tag_skipcode;
     internal static delegate* unmanaged[Cdecl]<byte*, byte*> _tag_skipcodes;
     internal static delegate* unmanaged[Cdecl]<byte*, nint> _tag_strlen;
+    internal static delegate* unmanaged[Cdecl]<void*, QString*, ulong> _tagged_line_section_t_get_addr;
     internal static delegate* unmanaged[Cdecl]<int, byte> _take_memory_snapshot;
     internal static delegate* unmanaged[Cdecl]<void> _term_database;
     internal static delegate* unmanaged[Cdecl]<int, void> _term_plugins;
@@ -1455,6 +1631,7 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, byte*, int> _throw_idc_exception;
     internal static delegate* unmanaged[Cdecl]<int, byte*> _tinfo_errstr;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, void*, byte> _tinfo_get_func_frame;
+    internal static delegate* unmanaged[Cdecl]<TypeInfo*, ulong, byte> _tinfo_get_func_frame_ea;
     internal static delegate* unmanaged[Cdecl]<TypeInfo*, TypeInfo*, ulong, nuint*, ulong*, byte, void> _tinfo_get_innermost_udm;
     internal static delegate* unmanaged[Cdecl]<QString*, TypeInfo*, byte> _tinfo_t__build_anon_type_name;
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte> _toggle_bnot;
@@ -1489,8 +1666,10 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<ulong, uint, uint, void> _upd_abits;
     internal static delegate* unmanaged[Cdecl]<ulong, int, byte*, byte> _update_extra_cmt;
     internal static delegate* unmanaged[Cdecl]<void*, ulong, byte> _update_fpd;
+    internal static delegate* unmanaged[Cdecl]<ulong, ulong, byte> _update_fpd_ea;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _update_func;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _update_hidden_range;
+    internal static delegate* unmanaged[Cdecl]<void*, byte> _update_hidden_range_info;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _update_segm;
     internal static delegate* unmanaged[Cdecl]<byte*, void*, void*, int, byte> _update_snapshot_attributes;
     internal static delegate* unmanaged[Cdecl]<ulong, ulong> _use_mapping;
@@ -1510,9 +1689,12 @@ public static unsafe partial class IdaNative
     internal static delegate* unmanaged[Cdecl]<void*, void> _vcred_init;
     internal static delegate* unmanaged[Cdecl]<void*, byte> _vcred_load_site;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, byte> _vcred_process_switch;
+    internal static delegate* unmanaged[Cdecl]<byte> _vcred_reg_del_auto_connect;
     internal static delegate* unmanaged[Cdecl]<byte> _vcred_reg_del_store_info;
+    internal static delegate* unmanaged[Cdecl]<byte, void> _vcred_reg_set_auto_connect;
     internal static delegate* unmanaged[Cdecl]<void*, byte*, void> _vcred_reg_set_site;
     internal static delegate* unmanaged[Cdecl]<byte, void> _vcred_reg_set_store_info;
+    internal static delegate* unmanaged[Cdecl]<byte> _vcred_reg_should_auto_connect;
     internal static delegate* unmanaged[Cdecl]<byte> _vcred_reg_should_store_info;
     internal static delegate* unmanaged[Cdecl]<void*, QString*, byte> _vcred_write;
     internal static delegate* unmanaged[Cdecl]<void*, int, void*, int> _verify_argloc;
@@ -1596,16 +1778,52 @@ public static unsafe partial class IdaNative
         return _add_frame(p0, p1, p2, p3);
     }
 
+    public static byte @add_frame_ea(ulong p0, long p1, ushort p2, ulong p3)
+    {
+        if ((nint)_add_frame_ea == 0) throw new System.EntryPointNotFoundException("'add_frame_ea' is not available for the loaded IDA SDK version.");
+        return _add_frame_ea(p0, p1, p2, p3);
+    }
+
     public static byte @add_frame_member(void* p0, byte* p1, ulong p2, TypeInfo* p3, void* p4, uint p5)
     {
         if ((nint)_add_frame_member == 0) throw new System.EntryPointNotFoundException("'add_frame_member' is not available for the loaded IDA SDK version.");
         return _add_frame_member(p0, p1, p2, p3, p4, p5);
     }
 
+    public static byte @add_frame_member_ea(ulong p0, byte* p1, ulong p2, TypeInfo* p3, void* p4, uint p5)
+    {
+        if ((nint)_add_frame_member_ea == 0) throw new System.EntryPointNotFoundException("'add_frame_member_ea' is not available for the loaded IDA SDK version.");
+        return _add_frame_member_ea(p0, p1, p2, p3, p4, p5);
+    }
+
+    public static byte @add_func_auto_stkpnt(ulong p0, ulong p1, long p2)
+    {
+        if ((nint)_add_func_auto_stkpnt == 0) throw new System.EntryPointNotFoundException("'add_func_auto_stkpnt' is not available for the loaded IDA SDK version.");
+        return _add_func_auto_stkpnt(p0, p1, p2);
+    }
+
     public static byte @add_func_ex(void* p0)
     {
         if ((nint)_add_func_ex == 0) throw new System.EntryPointNotFoundException("'add_func_ex' is not available for the loaded IDA SDK version.");
         return _add_func_ex(p0);
+    }
+
+    public static void @add_func_regarg(ulong p0, int p1, TypeInfo* p2, byte* p3)
+    {
+        if ((nint)_add_func_regarg == 0) throw new System.EntryPointNotFoundException("'add_func_regarg' is not available for the loaded IDA SDK version.");
+        _add_func_regarg(p0, p1, p2, p3);
+    }
+
+    public static int @add_func_regvar(ulong p0, ulong p1, ulong p2, byte* p3, byte* p4, byte* p5)
+    {
+        if ((nint)_add_func_regvar == 0) throw new System.EntryPointNotFoundException("'add_func_regvar' is not available for the loaded IDA SDK version.");
+        return _add_func_regvar(p0, p1, p2, p3, p4, p5);
+    }
+
+    public static byte @add_function_ex(void* p0)
+    {
+        if ((nint)_add_function_ex == 0) throw new System.EntryPointNotFoundException("'add_function_ex' is not available for the loaded IDA SDK version.");
+        return _add_function_ex(p0);
     }
 
     public static byte @add_hidden_range(ulong p0, ulong p1, byte* p2, byte* p3, byte* p4, uint p5)
@@ -1668,6 +1886,12 @@ public static unsafe partial class IdaNative
         return _add_segm(p0, p1, p2, p3, p4, p5);
     }
 
+    public static byte @add_segment_ex(void* p0, int p1)
+    {
+        if ((nint)_add_segment_ex == 0) throw new System.EntryPointNotFoundException("'add_segment_ex' is not available for the loaded IDA SDK version.");
+        return _add_segment_ex(p0, p1);
+    }
+
     public static byte @add_segment_translation(ulong p0, ulong p1)
     {
         if ((nint)_add_segment_translation == 0) throw new System.EntryPointNotFoundException("'add_segment_translation' is not available for the loaded IDA SDK version.");
@@ -1678,6 +1902,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_add_sourcefile == 0) throw new System.EntryPointNotFoundException("'add_sourcefile' is not available for the loaded IDA SDK version.");
         return _add_sourcefile(p0, p1, p2);
+    }
+
+    public static byte @add_sourcefiles(void* p0)
+    {
+        if ((nint)_add_sourcefiles == 0) throw new System.EntryPointNotFoundException("'add_sourcefiles' is not available for the loaded IDA SDK version.");
+        return _add_sourcefiles(p0);
     }
 
     public static byte* @add_spaces(byte* p0, nuint p1, nint p2)
@@ -1714,6 +1944,18 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_add_word == 0) throw new System.EntryPointNotFoundException("'add_word' is not available for the loaded IDA SDK version.");
         _add_word(p0, p1);
+    }
+
+    public static long @adjust_segment_diff(ulong p0, long p1)
+    {
+        if ((nint)_adjust_segment_diff == 0) throw new System.EntryPointNotFoundException("'adjust_segment_diff' is not available for the loaded IDA SDK version.");
+        return _adjust_segment_diff(p0, p1);
+    }
+
+    public static ulong @adjust_segment_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_adjust_segment_ea == 0) throw new System.EntryPointNotFoundException("'adjust_segment_ea' is not available for the loaded IDA SDK version.");
+        return _adjust_segment_ea(p0, p1);
     }
 
     public static ulong @align_down_to_stack(ulong p0)
@@ -1770,6 +2012,12 @@ public static unsafe partial class IdaNative
         return _append_func_tail(p0, p1, p2);
     }
 
+    public static byte @append_func_tail_ea(ulong p0, ulong p1, ulong p2)
+    {
+        if ((nint)_append_func_tail_ea == 0) throw new System.EntryPointNotFoundException("'append_func_tail_ea' is not available for the loaded IDA SDK version.");
+        return _append_func_tail_ea(p0, p1, p2);
+    }
+
     public static ulong @append_struct_fields(QString* p0, long* p1, int p2, ulong* p3, int p4, ulong p5, long p6, byte p7)
     {
         if ((nint)_append_struct_fields == 0) throw new System.EntryPointNotFoundException("'append_struct_fields' is not available for the loaded IDA SDK version.");
@@ -1786,6 +2034,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_append_to_flowchart == 0) throw new System.EntryPointNotFoundException("'append_to_flowchart' is not available for the loaded IDA SDK version.");
         return _append_to_flowchart(p0, p1, p2);
+    }
+
+    public static byte @append_to_func_flow_chart(void* p0, ulong p1, ulong p2)
+    {
+        if ((nint)_append_to_func_flow_chart == 0) throw new System.EntryPointNotFoundException("'append_to_func_flow_chart' is not available for the loaded IDA SDK version.");
+        return _append_to_func_flow_chart(p0, p1, p2);
     }
 
     public static byte @apply_callee_tinfo(ulong p0, TypeInfo* p1)
@@ -2124,10 +2378,22 @@ public static unsafe partial class IdaNative
         return _build_stkvar_name(p0, p1, p2);
     }
 
+    public static nint @build_stkvar_name_ea(QString* p0, ulong p1, long p2)
+    {
+        if ((nint)_build_stkvar_name_ea == 0) throw new System.EntryPointNotFoundException("'build_stkvar_name_ea' is not available for the loaded IDA SDK version.");
+        return _build_stkvar_name_ea(p0, p1, p2);
+    }
+
     public static void @build_stkvar_xrefs(void* p0, void* p1, ulong p2, ulong p3)
     {
         if ((nint)_build_stkvar_xrefs == 0) throw new System.EntryPointNotFoundException("'build_stkvar_xrefs' is not available for the loaded IDA SDK version.");
         _build_stkvar_xrefs(p0, p1, p2, p3);
+    }
+
+    public static void @build_stkvar_xrefs_ea(void* p0, ulong p1, ulong p2, ulong p3)
+    {
+        if ((nint)_build_stkvar_xrefs_ea == 0) throw new System.EntryPointNotFoundException("'build_stkvar_xrefs_ea' is not available for the loaded IDA SDK version.");
+        _build_stkvar_xrefs_ea(p0, p1, p2, p3);
     }
 
     public static void @build_strlist()
@@ -2140,6 +2406,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_calc_arglocs == 0) throw new System.EntryPointNotFoundException("'calc_arglocs' is not available for the loaded IDA SDK version.");
         return _calc_arglocs(p0);
+    }
+
+    public static ulong @calc_basevalue(ulong p0, ulong p1)
+    {
+        if ((nint)_calc_basevalue == 0) throw new System.EntryPointNotFoundException("'calc_basevalue' is not available for the loaded IDA SDK version.");
+        return _calc_basevalue(p0, p1);
     }
 
     public static uint @calc_bg_color(ulong p0)
@@ -2190,6 +2462,12 @@ public static unsafe partial class IdaNative
         return _calc_frame_offset(p0, p1, p2, p3);
     }
 
+    public static long @calc_frame_offset_ea(ulong p0, long p1, void* p2, void* p3)
+    {
+        if ((nint)_calc_frame_offset_ea == 0) throw new System.EntryPointNotFoundException("'calc_frame_offset_ea' is not available for the loaded IDA SDK version.");
+        return _calc_frame_offset_ea(p0, p1, p2, p3);
+    }
+
     public static ulong @calc_func_metadata(void* p0, void* p1, void* p2, void* p3)
     {
         if ((nint)_calc_func_metadata == 0) throw new System.EntryPointNotFoundException("'calc_func_metadata' is not available for the loaded IDA SDK version.");
@@ -2200,6 +2478,18 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_calc_func_size == 0) throw new System.EntryPointNotFoundException("'calc_func_size' is not available for the loaded IDA SDK version.");
         return _calc_func_size(p0);
+    }
+
+    public static ulong @calc_func_size_ea(ulong p0)
+    {
+        if ((nint)_calc_func_size_ea == 0) throw new System.EntryPointNotFoundException("'calc_func_size_ea' is not available for the loaded IDA SDK version.");
+        return _calc_func_size_ea(p0);
+    }
+
+    public static ulong @calc_function_metadata(void* p0, void* p1, ulong p2, void* p3)
+    {
+        if ((nint)_calc_function_metadata == 0) throw new System.EntryPointNotFoundException("'calc_function_metadata' is not available for the loaded IDA SDK version.");
+        return _calc_function_metadata(p0, p1, p2, p3);
     }
 
     public static int @calc_idasgn_state(int p0)
@@ -2268,6 +2558,12 @@ public static unsafe partial class IdaNative
         return _calc_stkvar_struc_offset(p0, p1, p2);
     }
 
+    public static ulong @calc_stkvar_struc_offset_ea(ulong p0, void* p1, int p2)
+    {
+        if ((nint)_calc_stkvar_struc_offset_ea == 0) throw new System.EntryPointNotFoundException("'calc_stkvar_struc_offset_ea' is not available for the loaded IDA SDK version.");
+        return _calc_stkvar_struc_offset_ea(p0, p1, p2);
+    }
+
     public static byte @calc_switch_cases(void* p0, void* p1, ulong p2, void* p3)
     {
         if ((nint)_calc_switch_cases == 0) throw new System.EntryPointNotFoundException("'calc_switch_cases' is not available for the loaded IDA SDK version.");
@@ -2278,6 +2574,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_calc_thunk_func_target == 0) throw new System.EntryPointNotFoundException("'calc_thunk_func_target' is not available for the loaded IDA SDK version.");
         return _calc_thunk_func_target(p0, p1);
+    }
+
+    public static ulong @calc_thunk_function_target(void* p0, ulong* p1)
+    {
+        if ((nint)_calc_thunk_function_target == 0) throw new System.EntryPointNotFoundException("'calc_thunk_function_target' is not available for the loaded IDA SDK version.");
+        return _calc_thunk_function_target(p0, p1);
     }
 
     public static byte @calc_tinfo_gaps(void* p0, ulong p1)
@@ -2344,6 +2646,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_change_segment_status == 0) throw new System.EntryPointNotFoundException("'change_segment_status' is not available for the loaded IDA SDK version.");
         return _change_segment_status(p0, p1);
+    }
+
+    public static int @change_segment_status_by_ea(ulong p0, byte p1)
+    {
+        if ((nint)_change_segment_status_by_ea == 0) throw new System.EntryPointNotFoundException("'change_segment_status_by_ea' is not available for the loaded IDA SDK version.");
+        return _change_segment_status_by_ea(p0, p1);
     }
 
     public static int @change_storage_type(ulong p0, ulong p1, int p2)
@@ -2532,6 +2840,12 @@ public static unsafe partial class IdaNative
         return _compare_arglocs(p0, p1);
     }
 
+    public static int @compare_bpt_locs(void* p0, void* p1)
+    {
+        if ((nint)_compare_bpt_locs == 0) throw new System.EntryPointNotFoundException("'compare_bpt_locs' is not available for the loaded IDA SDK version.");
+        return _compare_bpt_locs(p0, p1);
+    }
+
     public static byte @compare_tinfo(ulong p0, ulong p1, int p2)
     {
         if ((nint)_compare_tinfo == 0) throw new System.EntryPointNotFoundException("'compare_tinfo' is not available for the loaded IDA SDK version.");
@@ -2652,6 +2966,12 @@ public static unsafe partial class IdaNative
         _create_filename_cmt();
     }
 
+    public static void @create_func_flow_chart(void* p0)
+    {
+        if ((nint)_create_func_flow_chart == 0) throw new System.EntryPointNotFoundException("'create_func_flow_chart' is not available for the loaded IDA SDK version.");
+        _create_func_flow_chart(p0);
+    }
+
     public static void* @create_generic_linput(void* p0)
     {
         if ((nint)_create_generic_linput == 0) throw new System.EntryPointNotFoundException("'create_generic_linput' is not available for the loaded IDA SDK version.");
@@ -2680,6 +3000,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_create_memory_linput == 0) throw new System.EntryPointNotFoundException("'create_memory_linput' is not available for the loaded IDA SDK version.");
         return _create_memory_linput(p0, p1);
+    }
+
+    public static byte @create_multirange_func_flow_chart(void* p0, void* p1)
+    {
+        if ((nint)_create_multirange_func_flow_chart == 0) throw new System.EntryPointNotFoundException("'create_multirange_func_flow_chart' is not available for the loaded IDA SDK version.");
+        return _create_multirange_func_flow_chart(p0, p1);
     }
 
     public static byte @create_multirange_qflow_chart(void* p0, void* p1)
@@ -2826,6 +3152,12 @@ public static unsafe partial class IdaNative
         return _define_stkvar(p0, p1, p2, p3, p4);
     }
 
+    public static byte @define_stkvar_ea(ulong p0, byte* p1, long p2, TypeInfo* p3, void* p4)
+    {
+        if ((nint)_define_stkvar_ea == 0) throw new System.EntryPointNotFoundException("'define_stkvar_ea' is not available for the loaded IDA SDK version.");
+        return _define_stkvar_ea(p0, p1, p2, p3, p4);
+    }
+
     public static void @del_aflags(ulong p0)
     {
         if ((nint)_del_aflags == 0) throw new System.EntryPointNotFoundException("'del_aflags' is not available for the loaded IDA SDK version.");
@@ -2874,10 +3206,28 @@ public static unsafe partial class IdaNative
         return _del_frame(p0);
     }
 
+    public static byte @del_frame_ea(ulong p0)
+    {
+        if ((nint)_del_frame_ea == 0) throw new System.EntryPointNotFoundException("'del_frame_ea' is not available for the loaded IDA SDK version.");
+        return _del_frame_ea(p0);
+    }
+
     public static byte @del_func(ulong p0)
     {
         if ((nint)_del_func == 0) throw new System.EntryPointNotFoundException("'del_func' is not available for the loaded IDA SDK version.");
         return _del_func(p0);
+    }
+
+    public static int @del_func_regvar(ulong p0, ulong p1, ulong p2, byte* p3)
+    {
+        if ((nint)_del_func_regvar == 0) throw new System.EntryPointNotFoundException("'del_func_regvar' is not available for the loaded IDA SDK version.");
+        return _del_func_regvar(p0, p1, p2, p3);
+    }
+
+    public static byte @del_func_stkpnt(ulong p0, ulong p1)
+    {
+        if ((nint)_del_func_stkpnt == 0) throw new System.EntryPointNotFoundException("'del_func_stkpnt' is not available for the loaded IDA SDK version.");
+        return _del_func_stkpnt(p0, p1);
     }
 
     public static byte @del_hidden_range(ulong p0)
@@ -3054,6 +3404,12 @@ public static unsafe partial class IdaNative
         return _delete_frame_members(p0, p1, p2);
     }
 
+    public static byte @delete_frame_members_ea(ulong p0, ulong p1, ulong p2)
+    {
+        if ((nint)_delete_frame_members_ea == 0) throw new System.EntryPointNotFoundException("'delete_frame_members_ea' is not available for the loaded IDA SDK version.");
+        return _delete_frame_members_ea(p0, p1, p2);
+    }
+
     public static void @delete_imports()
     {
         if ((nint)_delete_imports == 0) throw new System.EntryPointNotFoundException("'delete_imports' is not available for the loaded IDA SDK version.");
@@ -3202,6 +3558,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_dirtree_findnext == 0) throw new System.EntryPointNotFoundException("'dirtree_findnext' is not available for the loaded IDA SDK version.");
         return _dirtree_findnext(p0, p1);
+    }
+
+    public static int @dirtree_fold_common_prefix(void* p0, byte* p1, byte p2)
+    {
+        if ((nint)_dirtree_fold_common_prefix == 0) throw new System.EntryPointNotFoundException("'dirtree_fold_common_prefix' is not available for the loaded IDA SDK version.");
+        return _dirtree_fold_common_prefix(p0, p1, p2);
     }
 
     public static byte @dirtree_get_abspath_by_cursor(QString* p0, void* p1, void* p2, uint p3)
@@ -3534,6 +3896,12 @@ public static unsafe partial class IdaNative
         return _enumerate_files(p0, p1, p2, p3, p4);
     }
 
+    public static ulong @enumerate_segments_with_selector_ea(ulong p0, void* p1)
+    {
+        if ((nint)_enumerate_segments_with_selector_ea == 0) throw new System.EntryPointNotFoundException("'enumerate_segments_with_selector_ea' is not available for the loaded IDA SDK version.");
+        return _enumerate_segments_with_selector_ea(p0, p1);
+    }
+
     public static byte @equal_bytes(ulong p0, byte* p1, byte* p2, nuint p3, int p4)
     {
         if ((nint)_equal_bytes == 0) throw new System.EntryPointNotFoundException("'equal_bytes' is not available for the loaded IDA SDK version.");
@@ -3642,6 +4010,12 @@ public static unsafe partial class IdaNative
         return _fc_calc_block_type(p0, p1);
     }
 
+    public static int @fc_calc_func_block_type(void* p0, nuint p1)
+    {
+        if ((nint)_fc_calc_func_block_type == 0) throw new System.EntryPointNotFoundException("'fc_calc_func_block_type' is not available for the loaded IDA SDK version.");
+        return _fc_calc_func_block_type(p0, p1);
+    }
+
     public static ulong @find_binary(ulong p0, ulong p1, byte* p2, int p3, int p4, int p5)
     {
         if ((nint)_find_binary == 0) throw new System.EntryPointNotFoundException("'find_binary' is not available for the loaded IDA SDK version.");
@@ -3744,6 +4118,18 @@ public static unsafe partial class IdaNative
         return _find_func_bounds(p0, p1);
     }
 
+    public static nint @find_func_regvar(void* p0, ulong p1, ulong p2, ulong p3, byte* p4, byte* p5)
+    {
+        if ((nint)_find_func_regvar == 0) throw new System.EntryPointNotFoundException("'find_func_regvar' is not available for the loaded IDA SDK version.");
+        return _find_func_regvar(p0, p1, p2, p3, p4, p5);
+    }
+
+    public static int @find_function_bounds(void* p0, int p1)
+    {
+        if ((nint)_find_function_bounds == 0) throw new System.EntryPointNotFoundException("'find_function_bounds' is not available for the loaded IDA SDK version.");
+        return _find_function_bounds(p0, p1);
+    }
+
     public static void* @find_idc_class(byte* p0)
     {
         if ((nint)_find_idc_class == 0) throw new System.EntryPointNotFoundException("'find_idc_class' is not available for the loaded IDA SDK version.");
@@ -3820,6 +4206,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_find_reg_value_info == 0) throw new System.EntryPointNotFoundException("'find_reg_value_info' is not available for the loaded IDA SDK version.");
         return _find_reg_value_info(p0, p1, p2, p3);
+    }
+
+    public static byte @find_regname_value_info(void* p0, ulong p1, byte* p2, int p3)
+    {
+        if ((nint)_find_regname_value_info == 0) throw new System.EntryPointNotFoundException("'find_regname_value_info' is not available for the loaded IDA SDK version.");
+        return _find_regname_value_info(p0, p1, p2, p3);
     }
 
     public static void* @find_regvar(void* p0, ulong p1, ulong p2, byte* p3, byte* p4)
@@ -4068,6 +4460,126 @@ public static unsafe partial class IdaNative
         return _func_tail_iterator_set_ea(p0, p1);
     }
 
+    public static byte @function_item_iterator_decode_preceding_insn(void* p0, void* p1, byte* p2, void* p3)
+    {
+        if ((nint)_function_item_iterator_decode_preceding_insn == 0) throw new System.EntryPointNotFoundException("'function_item_iterator_decode_preceding_insn' is not available for the loaded IDA SDK version.");
+        return _function_item_iterator_decode_preceding_insn(p0, p1, p2, p3);
+    }
+
+    public static byte @function_item_iterator_decode_prev_insn(void* p0, void* p1)
+    {
+        if ((nint)_function_item_iterator_decode_prev_insn == 0) throw new System.EntryPointNotFoundException("'function_item_iterator_decode_prev_insn' is not available for the loaded IDA SDK version.");
+        return _function_item_iterator_decode_prev_insn(p0, p1);
+    }
+
+    public static byte @function_item_iterator_next(void* p0, void* p1, void* p2)
+    {
+        if ((nint)_function_item_iterator_next == 0) throw new System.EntryPointNotFoundException("'function_item_iterator_next' is not available for the loaded IDA SDK version.");
+        return _function_item_iterator_next(p0, p1, p2);
+    }
+
+    public static byte @function_item_iterator_prev(void* p0, void* p1, void* p2)
+    {
+        if ((nint)_function_item_iterator_prev == 0) throw new System.EntryPointNotFoundException("'function_item_iterator_prev' is not available for the loaded IDA SDK version.");
+        return _function_item_iterator_prev(p0, p1, p2);
+    }
+
+    public static byte @function_item_iterator_succ(void* p0, void* p1, void* p2)
+    {
+        if ((nint)_function_item_iterator_succ == 0) throw new System.EntryPointNotFoundException("'function_item_iterator_succ' is not available for the loaded IDA SDK version.");
+        return _function_item_iterator_succ(p0, p1, p2);
+    }
+
+    public static byte @function_parent_iterator_first(void* p0)
+    {
+        if ((nint)_function_parent_iterator_first == 0) throw new System.EntryPointNotFoundException("'function_parent_iterator_first' is not available for the loaded IDA SDK version.");
+        return _function_parent_iterator_first(p0);
+    }
+
+    public static byte @function_parent_iterator_last(void* p0)
+    {
+        if ((nint)_function_parent_iterator_last == 0) throw new System.EntryPointNotFoundException("'function_parent_iterator_last' is not available for the loaded IDA SDK version.");
+        return _function_parent_iterator_last(p0);
+    }
+
+    public static byte @function_parent_iterator_next(void* p0)
+    {
+        if ((nint)_function_parent_iterator_next == 0) throw new System.EntryPointNotFoundException("'function_parent_iterator_next' is not available for the loaded IDA SDK version.");
+        return _function_parent_iterator_next(p0);
+    }
+
+    public static ulong @function_parent_iterator_parent(void* p0)
+    {
+        if ((nint)_function_parent_iterator_parent == 0) throw new System.EntryPointNotFoundException("'function_parent_iterator_parent' is not available for the loaded IDA SDK version.");
+        return _function_parent_iterator_parent(p0);
+    }
+
+    public static byte @function_parent_iterator_prev(void* p0)
+    {
+        if ((nint)_function_parent_iterator_prev == 0) throw new System.EntryPointNotFoundException("'function_parent_iterator_prev' is not available for the loaded IDA SDK version.");
+        return _function_parent_iterator_prev(p0);
+    }
+
+    public static byte @function_parent_iterator_set(void* p0, ulong p1)
+    {
+        if ((nint)_function_parent_iterator_set == 0) throw new System.EntryPointNotFoundException("'function_parent_iterator_set' is not available for the loaded IDA SDK version.");
+        return _function_parent_iterator_set(p0, p1);
+    }
+
+    public static void @function_tail_iterator_chunk(void* p0, void* p1)
+    {
+        if ((nint)_function_tail_iterator_chunk == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_chunk' is not available for the loaded IDA SDK version.");
+        _function_tail_iterator_chunk(p0, p1);
+    }
+
+    public static byte @function_tail_iterator_first(void* p0)
+    {
+        if ((nint)_function_tail_iterator_first == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_first' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_first(p0);
+    }
+
+    public static byte @function_tail_iterator_last(void* p0)
+    {
+        if ((nint)_function_tail_iterator_last == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_last' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_last(p0);
+    }
+
+    public static byte @function_tail_iterator_main(void* p0)
+    {
+        if ((nint)_function_tail_iterator_main == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_main' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_main(p0);
+    }
+
+    public static byte @function_tail_iterator_next(void* p0)
+    {
+        if ((nint)_function_tail_iterator_next == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_next' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_next(p0);
+    }
+
+    public static byte @function_tail_iterator_prev(void* p0)
+    {
+        if ((nint)_function_tail_iterator_prev == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_prev' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_prev(p0);
+    }
+
+    public static byte @function_tail_iterator_set(void* p0, ulong p1, ulong p2)
+    {
+        if ((nint)_function_tail_iterator_set == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_set' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_set(p0, p1, p2);
+    }
+
+    public static byte @function_tail_iterator_set_ea(void* p0, ulong p1)
+    {
+        if ((nint)_function_tail_iterator_set_ea == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_set_ea' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_set_ea(p0, p1);
+    }
+
+    public static byte @function_tail_iterator_set_range(void* p0, ulong p1, ulong p2)
+    {
+        if ((nint)_function_tail_iterator_set_range == 0) throw new System.EntryPointNotFoundException("'function_tail_iterator_set_range' is not available for the loaded IDA SDK version.");
+        return _function_tail_iterator_set_range(p0, p1, p2);
+    }
+
     public static int @fwritebytes(void* p0, void* p1, int p2, int p3)
     {
         if ((nint)_fwritebytes == 0) throw new System.EntryPointNotFoundException("'fwritebytes' is not available for the loaded IDA SDK version.");
@@ -4108,6 +4620,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_gen_flow_graph == 0) throw new System.EntryPointNotFoundException("'gen_flow_graph' is not available for the loaded IDA SDK version.");
         return _gen_flow_graph(p0, p1, p2, p3, p4, p5);
+    }
+
+    public static byte @gen_flow_graph_ea(byte* p0, byte* p1, ulong p2, ulong p3, ulong p4, int p5)
+    {
+        if ((nint)_gen_flow_graph_ea == 0) throw new System.EntryPointNotFoundException("'gen_flow_graph_ea' is not available for the loaded IDA SDK version.");
+        return _gen_flow_graph_ea(p0, p1, p2, p3, p4, p5);
     }
 
     public static void @gen_gdl(void* p0, byte* p1)
@@ -4578,6 +5096,18 @@ public static unsafe partial class IdaNative
         return _get_fchunk(p0);
     }
 
+    public static ulong @get_fchunk_ea_by_num(int p0)
+    {
+        if ((nint)_get_fchunk_ea_by_num == 0) throw new System.EntryPointNotFoundException("'get_fchunk_ea_by_num' is not available for the loaded IDA SDK version.");
+        return _get_fchunk_ea_by_num(p0);
+    }
+
+    public static byte @get_fchunk_info(void* p0, ulong p1)
+    {
+        if ((nint)_get_fchunk_info == 0) throw new System.EntryPointNotFoundException("'get_fchunk_info' is not available for the loaded IDA SDK version.");
+        return _get_fchunk_info(p0, p1);
+    }
+
     public static int @get_fchunk_num(ulong p0)
     {
         if ((nint)_get_fchunk_num == 0) throw new System.EntryPointNotFoundException("'get_fchunk_num' is not available for the loaded IDA SDK version.");
@@ -4588,6 +5118,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_get_fchunk_qty == 0) throw new System.EntryPointNotFoundException("'get_fchunk_qty' is not available for the loaded IDA SDK version.");
         return _get_fchunk_qty();
+    }
+
+    public static ulong @get_fchunk_start(ulong p0)
+    {
+        if ((nint)_get_fchunk_start == 0) throw new System.EntryPointNotFoundException("'get_fchunk_start' is not available for the loaded IDA SDK version.");
+        return _get_fchunk_start(p0);
     }
 
     public static byte* @get_file_ext(byte* p0)
@@ -4656,10 +5192,22 @@ public static unsafe partial class IdaNative
         return _get_first_hidden_range();
     }
 
+    public static ulong @get_first_hidden_range_ea()
+    {
+        if ((nint)_get_first_hidden_range_ea == 0) throw new System.EntryPointNotFoundException("'get_first_hidden_range_ea' is not available for the loaded IDA SDK version.");
+        return _get_first_hidden_range_ea();
+    }
+
     public static void* @get_first_seg()
     {
         if ((nint)_get_first_seg == 0) throw new System.EntryPointNotFoundException("'get_first_seg' is not available for the loaded IDA SDK version.");
         return _get_first_seg();
+    }
+
+    public static ulong @get_first_segment_ea()
+    {
+        if ((nint)_get_first_segment_ea == 0) throw new System.EntryPointNotFoundException("'get_first_segment_ea' is not available for the loaded IDA SDK version.");
+        return _get_first_segment_ea();
     }
 
     public static byte @get_fixup(void* p0, ulong p1)
@@ -4722,16 +5270,34 @@ public static unsafe partial class IdaNative
         _get_frame_part(p0, p1, p2);
     }
 
+    public static byte @get_frame_part_ea(void* p0, ulong p1, int p2)
+    {
+        if ((nint)_get_frame_part_ea == 0) throw new System.EntryPointNotFoundException("'get_frame_part_ea' is not available for the loaded IDA SDK version.");
+        return _get_frame_part_ea(p0, p1, p2);
+    }
+
     public static int @get_frame_retsize(void* p0)
     {
         if ((nint)_get_frame_retsize == 0) throw new System.EntryPointNotFoundException("'get_frame_retsize' is not available for the loaded IDA SDK version.");
         return _get_frame_retsize(p0);
     }
 
+    public static int @get_frame_retsize_ea(ulong p0)
+    {
+        if ((nint)_get_frame_retsize_ea == 0) throw new System.EntryPointNotFoundException("'get_frame_retsize_ea' is not available for the loaded IDA SDK version.");
+        return _get_frame_retsize_ea(p0);
+    }
+
     public static ulong @get_frame_size(void* p0)
     {
         if ((nint)_get_frame_size == 0) throw new System.EntryPointNotFoundException("'get_frame_size' is not available for the loaded IDA SDK version.");
         return _get_frame_size(p0);
+    }
+
+    public static ulong @get_frame_size_ea(ulong p0)
+    {
+        if ((nint)_get_frame_size_ea == 0) throw new System.EntryPointNotFoundException("'get_frame_size_ea' is not available for the loaded IDA SDK version.");
+        return _get_frame_size_ea(p0);
     }
 
     public static nint @get_frame_var(TypeInfo* p0, long* p1, void* p2, void* p3, long p4)
@@ -4758,10 +5324,22 @@ public static unsafe partial class IdaNative
         return _get_func_bitness(p0);
     }
 
+    public static int @get_func_bitness_ea(ulong p0)
+    {
+        if ((nint)_get_func_bitness_ea == 0) throw new System.EntryPointNotFoundException("'get_func_bitness_ea' is not available for the loaded IDA SDK version.");
+        return _get_func_bitness_ea(p0);
+    }
+
     public static int @get_func_chunknum(void* p0, ulong p1)
     {
         if ((nint)_get_func_chunknum == 0) throw new System.EntryPointNotFoundException("'get_func_chunknum' is not available for the loaded IDA SDK version.");
         return _get_func_chunknum(p0, p1);
+    }
+
+    public static int @get_func_chunknum_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_get_func_chunknum_ea == 0) throw new System.EntryPointNotFoundException("'get_func_chunknum_ea' is not available for the loaded IDA SDK version.");
+        return _get_func_chunknum_ea(p0, p1);
     }
 
     public static nint @get_func_cmt(QString* p0, void* p1, byte p2)
@@ -4770,10 +5348,64 @@ public static unsafe partial class IdaNative
         return _get_func_cmt(p0, p1, p2);
     }
 
+    public static nint @get_func_cmt_ea(QString* p0, ulong p1, byte p2)
+    {
+        if ((nint)_get_func_cmt_ea == 0) throw new System.EntryPointNotFoundException("'get_func_cmt_ea' is not available for the loaded IDA SDK version.");
+        return _get_func_cmt_ea(p0, p1, p2);
+    }
+
+    public static ulong @get_func_ea_by_num(nuint p0)
+    {
+        if ((nint)_get_func_ea_by_num == 0) throw new System.EntryPointNotFoundException("'get_func_ea_by_num' is not available for the loaded IDA SDK version.");
+        return _get_func_ea_by_num(p0);
+    }
+
+    public static long @get_func_effective_spd(ulong p0, ulong p1)
+    {
+        if ((nint)_get_func_effective_spd == 0) throw new System.EntryPointNotFoundException("'get_func_effective_spd' is not available for the loaded IDA SDK version.");
+        return _get_func_effective_spd(p0, p1);
+    }
+
+    public static byte @get_func_entry_info(void* p0, ulong p1, int p2)
+    {
+        if ((nint)_get_func_entry_info == 0) throw new System.EntryPointNotFoundException("'get_func_entry_info' is not available for the loaded IDA SDK version.");
+        return _get_func_entry_info(p0, p1, p2);
+    }
+
+    public static byte @get_func_entry_info_by_num(void* p0, nuint p1, int p2)
+    {
+        if ((nint)_get_func_entry_info_by_num == 0) throw new System.EntryPointNotFoundException("'get_func_entry_info_by_num' is not available for the loaded IDA SDK version.");
+        return _get_func_entry_info_by_num(p0, p1, p2);
+    }
+
+    public static ulong @get_func_flags(ulong p0)
+    {
+        if ((nint)_get_func_flags == 0) throw new System.EntryPointNotFoundException("'get_func_flags' is not available for the loaded IDA SDK version.");
+        return _get_func_flags(p0);
+    }
+
     public static byte @get_func_frame(TypeInfo* p0, void* p1)
     {
         if ((nint)_get_func_frame == 0) throw new System.EntryPointNotFoundException("'get_func_frame' is not available for the loaded IDA SDK version.");
         return _get_func_frame(p0, p1);
+    }
+
+    public static byte @get_func_frame_ea(TypeInfo* p0, ulong p1)
+    {
+        if ((nint)_get_func_frame_ea == 0) throw new System.EntryPointNotFoundException("'get_func_frame_ea' is not available for the loaded IDA SDK version.");
+        return _get_func_frame_ea(p0, p1);
+    }
+
+    public static nuint @get_func_llabel_qty(ulong p0)
+    {
+        if ((nint)_get_func_llabel_qty == 0) throw new System.EntryPointNotFoundException("'get_func_llabel_qty' is not available for the loaded IDA SDK version.");
+        return _get_func_llabel_qty(p0);
+    }
+
+    public static byte @get_func_llabels(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_llabels == 0) throw new System.EntryPointNotFoundException("'get_func_llabels' is not available for the loaded IDA SDK version.");
+        return _get_func_llabels(p0, p1);
     }
 
     public static nint @get_func_name(QString* p0, ulong p1)
@@ -4800,6 +5432,96 @@ public static unsafe partial class IdaNative
         return _get_func_ranges(p0, p1);
     }
 
+    public static ulong @get_func_ranges_ea(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_ranges_ea == 0) throw new System.EntryPointNotFoundException("'get_func_ranges_ea' is not available for the loaded IDA SDK version.");
+        return _get_func_ranges_ea(p0, p1);
+    }
+
+    public static byte @get_func_regarg(void* p0, ulong p1, nuint p2)
+    {
+        if ((nint)_get_func_regarg == 0) throw new System.EntryPointNotFoundException("'get_func_regarg' is not available for the loaded IDA SDK version.");
+        return _get_func_regarg(p0, p1, p2);
+    }
+
+    public static nuint @get_func_regarg_qty(ulong p0)
+    {
+        if ((nint)_get_func_regarg_qty == 0) throw new System.EntryPointNotFoundException("'get_func_regarg_qty' is not available for the loaded IDA SDK version.");
+        return _get_func_regarg_qty(p0);
+    }
+
+    public static byte @get_func_regargs(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_regargs == 0) throw new System.EntryPointNotFoundException("'get_func_regargs' is not available for the loaded IDA SDK version.");
+        return _get_func_regargs(p0, p1);
+    }
+
+    public static byte @get_func_regvar(void* p0, ulong p1, nint p2)
+    {
+        if ((nint)_get_func_regvar == 0) throw new System.EntryPointNotFoundException("'get_func_regvar' is not available for the loaded IDA SDK version.");
+        return _get_func_regvar(p0, p1, p2);
+    }
+
+    public static nuint @get_func_regvar_qty(ulong p0)
+    {
+        if ((nint)_get_func_regvar_qty == 0) throw new System.EntryPointNotFoundException("'get_func_regvar_qty' is not available for the loaded IDA SDK version.");
+        return _get_func_regvar_qty(p0);
+    }
+
+    public static byte @get_func_regvars(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_regvars == 0) throw new System.EntryPointNotFoundException("'get_func_regvars' is not available for the loaded IDA SDK version.");
+        return _get_func_regvars(p0, p1);
+    }
+
+    public static long @get_func_sp_delta(ulong p0, ulong p1)
+    {
+        if ((nint)_get_func_sp_delta == 0) throw new System.EntryPointNotFoundException("'get_func_sp_delta' is not available for the loaded IDA SDK version.");
+        return _get_func_sp_delta(p0, p1);
+    }
+
+    public static long @get_func_spd(ulong p0, ulong p1)
+    {
+        if ((nint)_get_func_spd == 0) throw new System.EntryPointNotFoundException("'get_func_spd' is not available for the loaded IDA SDK version.");
+        return _get_func_spd(p0, p1);
+    }
+
+    public static ulong @get_func_start(ulong p0)
+    {
+        if ((nint)_get_func_start == 0) throw new System.EntryPointNotFoundException("'get_func_start' is not available for the loaded IDA SDK version.");
+        return _get_func_start(p0);
+    }
+
+    public static nuint @get_func_stkpnt_qty(ulong p0)
+    {
+        if ((nint)_get_func_stkpnt_qty == 0) throw new System.EntryPointNotFoundException("'get_func_stkpnt_qty' is not available for the loaded IDA SDK version.");
+        return _get_func_stkpnt_qty(p0);
+    }
+
+    public static byte @get_func_stkpnts(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_stkpnts == 0) throw new System.EntryPointNotFoundException("'get_func_stkpnts' is not available for the loaded IDA SDK version.");
+        return _get_func_stkpnts(p0, p1);
+    }
+
+    public static byte @get_func_tail_info(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_tail_info == 0) throw new System.EntryPointNotFoundException("'get_func_tail_info' is not available for the loaded IDA SDK version.");
+        return _get_func_tail_info(p0, p1);
+    }
+
+    public static nuint @get_func_tail_qty(ulong p0)
+    {
+        if ((nint)_get_func_tail_qty == 0) throw new System.EntryPointNotFoundException("'get_func_tail_qty' is not available for the loaded IDA SDK version.");
+        return _get_func_tail_qty(p0);
+    }
+
+    public static byte @get_func_tails(void* p0, ulong p1)
+    {
+        if ((nint)_get_func_tails == 0) throw new System.EntryPointNotFoundException("'get_func_tails' is not available for the loaded IDA SDK version.");
+        return _get_func_tails(p0, p1);
+    }
+
     public static ulong @get_group_selector(ulong p0)
     {
         if ((nint)_get_group_selector == 0) throw new System.EntryPointNotFoundException("'get_group_selector' is not available for the loaded IDA SDK version.");
@@ -4816,6 +5538,18 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_get_hidden_range == 0) throw new System.EntryPointNotFoundException("'get_hidden_range' is not available for the loaded IDA SDK version.");
         return _get_hidden_range(p0);
+    }
+
+    public static byte @get_hidden_range_info(void* p0, ulong p1)
+    {
+        if ((nint)_get_hidden_range_info == 0) throw new System.EntryPointNotFoundException("'get_hidden_range_info' is not available for the loaded IDA SDK version.");
+        return _get_hidden_range_info(p0, p1);
+    }
+
+    public static byte @get_hidden_range_info_by_num(void* p0, int p1)
+    {
+        if ((nint)_get_hidden_range_info_by_num == 0) throw new System.EntryPointNotFoundException("'get_hidden_range_info_by_num' is not available for the loaded IDA SDK version.");
+        return _get_hidden_range_info_by_num(p0, p1);
     }
 
     public static int @get_hidden_range_num(ulong p0)
@@ -4992,6 +5726,12 @@ public static unsafe partial class IdaNative
         return _get_last_hidden_range();
     }
 
+    public static ulong @get_last_hidden_range_ea()
+    {
+        if ((nint)_get_last_hidden_range_ea == 0) throw new System.EntryPointNotFoundException("'get_last_hidden_range_ea' is not available for the loaded IDA SDK version.");
+        return _get_last_hidden_range_ea();
+    }
+
     public static int @get_last_pfxlen()
     {
         if ((nint)_get_last_pfxlen == 0) throw new System.EntryPointNotFoundException("'get_last_pfxlen' is not available for the loaded IDA SDK version.");
@@ -5002,6 +5742,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_get_last_seg == 0) throw new System.EntryPointNotFoundException("'get_last_seg' is not available for the loaded IDA SDK version.");
         return _get_last_seg();
+    }
+
+    public static ulong @get_last_segment_ea()
+    {
+        if ((nint)_get_last_segment_ea == 0) throw new System.EntryPointNotFoundException("'get_last_segment_ea' is not available for the loaded IDA SDK version.");
+        return _get_last_segment_ea();
     }
 
     public static byte @get_library_version(int* p0, int* p1, int* p2)
@@ -5148,6 +5894,18 @@ public static unsafe partial class IdaNative
         return _get_next_fchunk(p0);
     }
 
+    public static ulong @get_next_fchunk_ea(ulong p0)
+    {
+        if ((nint)_get_next_fchunk_ea == 0) throw new System.EntryPointNotFoundException("'get_next_fchunk_ea' is not available for the loaded IDA SDK version.");
+        return _get_next_fchunk_ea(p0);
+    }
+
+    public static byte @get_next_fchunk_info(void* p0, ulong p1)
+    {
+        if ((nint)_get_next_fchunk_info == 0) throw new System.EntryPointNotFoundException("'get_next_fchunk_info' is not available for the loaded IDA SDK version.");
+        return _get_next_fchunk_info(p0, p1);
+    }
+
     public static ulong @get_next_fcref_from(ulong p0, ulong p1)
     {
         if ((nint)_get_next_fcref_from == 0) throw new System.EntryPointNotFoundException("'get_next_fcref_from' is not available for the loaded IDA SDK version.");
@@ -5178,16 +5936,40 @@ public static unsafe partial class IdaNative
         return _get_next_func_addr(p0, p1);
     }
 
+    public static ulong @get_next_func_ea(ulong p0)
+    {
+        if ((nint)_get_next_func_ea == 0) throw new System.EntryPointNotFoundException("'get_next_func_ea' is not available for the loaded IDA SDK version.");
+        return _get_next_func_ea(p0);
+    }
+
+    public static ulong @get_next_function_addr(ulong p0, ulong p1)
+    {
+        if ((nint)_get_next_function_addr == 0) throw new System.EntryPointNotFoundException("'get_next_function_addr' is not available for the loaded IDA SDK version.");
+        return _get_next_function_addr(p0, p1);
+    }
+
     public static void* @get_next_hidden_range(ulong p0)
     {
         if ((nint)_get_next_hidden_range == 0) throw new System.EntryPointNotFoundException("'get_next_hidden_range' is not available for the loaded IDA SDK version.");
         return _get_next_hidden_range(p0);
     }
 
+    public static ulong @get_next_hidden_range_ea(ulong p0)
+    {
+        if ((nint)_get_next_hidden_range_ea == 0) throw new System.EntryPointNotFoundException("'get_next_hidden_range_ea' is not available for the loaded IDA SDK version.");
+        return _get_next_hidden_range_ea(p0);
+    }
+
     public static void* @get_next_seg(ulong p0)
     {
         if ((nint)_get_next_seg == 0) throw new System.EntryPointNotFoundException("'get_next_seg' is not available for the loaded IDA SDK version.");
         return _get_next_seg(p0);
+    }
+
+    public static ulong @get_next_segment_ea(ulong p0)
+    {
+        if ((nint)_get_next_segment_ea == 0) throw new System.EntryPointNotFoundException("'get_next_segment_ea' is not available for the loaded IDA SDK version.");
+        return _get_next_segment_ea(p0);
     }
 
     public static nint @get_nice_colored_name(QString* p0, ulong p1, int p2)
@@ -5376,6 +6158,18 @@ public static unsafe partial class IdaNative
         return _get_prev_fchunk(p0);
     }
 
+    public static ulong @get_prev_fchunk_ea(ulong p0)
+    {
+        if ((nint)_get_prev_fchunk_ea == 0) throw new System.EntryPointNotFoundException("'get_prev_fchunk_ea' is not available for the loaded IDA SDK version.");
+        return _get_prev_fchunk_ea(p0);
+    }
+
+    public static byte @get_prev_fchunk_info(void* p0, ulong p1)
+    {
+        if ((nint)_get_prev_fchunk_info == 0) throw new System.EntryPointNotFoundException("'get_prev_fchunk_info' is not available for the loaded IDA SDK version.");
+        return _get_prev_fchunk_info(p0, p1);
+    }
+
     public static ulong @get_prev_fixup_ea(ulong p0)
     {
         if ((nint)_get_prev_fixup_ea == 0) throw new System.EntryPointNotFoundException("'get_prev_fixup_ea' is not available for the loaded IDA SDK version.");
@@ -5394,16 +6188,40 @@ public static unsafe partial class IdaNative
         return _get_prev_func_addr(p0, p1);
     }
 
+    public static ulong @get_prev_func_ea(ulong p0)
+    {
+        if ((nint)_get_prev_func_ea == 0) throw new System.EntryPointNotFoundException("'get_prev_func_ea' is not available for the loaded IDA SDK version.");
+        return _get_prev_func_ea(p0);
+    }
+
+    public static ulong @get_prev_function_addr(ulong p0, ulong p1)
+    {
+        if ((nint)_get_prev_function_addr == 0) throw new System.EntryPointNotFoundException("'get_prev_function_addr' is not available for the loaded IDA SDK version.");
+        return _get_prev_function_addr(p0, p1);
+    }
+
     public static void* @get_prev_hidden_range(ulong p0)
     {
         if ((nint)_get_prev_hidden_range == 0) throw new System.EntryPointNotFoundException("'get_prev_hidden_range' is not available for the loaded IDA SDK version.");
         return _get_prev_hidden_range(p0);
     }
 
+    public static ulong @get_prev_hidden_range_ea(ulong p0)
+    {
+        if ((nint)_get_prev_hidden_range_ea == 0) throw new System.EntryPointNotFoundException("'get_prev_hidden_range_ea' is not available for the loaded IDA SDK version.");
+        return _get_prev_hidden_range_ea(p0);
+    }
+
     public static void* @get_prev_seg(ulong p0)
     {
         if ((nint)_get_prev_seg == 0) throw new System.EntryPointNotFoundException("'get_prev_seg' is not available for the loaded IDA SDK version.");
         return _get_prev_seg(p0);
+    }
+
+    public static ulong @get_prev_segment_ea(ulong p0)
+    {
+        if ((nint)_get_prev_segment_ea == 0) throw new System.EntryPointNotFoundException("'get_prev_segment_ea' is not available for the loaded IDA SDK version.");
+        return _get_prev_segment_ea(p0);
     }
 
     public static byte @get_prev_sreg_range(void* p0, ulong p1, int p2)
@@ -5448,6 +6266,12 @@ public static unsafe partial class IdaNative
         return _get_radix(p0, p1);
     }
 
+    public static byte @get_realtype(void* p0, byte* p1)
+    {
+        if ((nint)_get_realtype == 0) throw new System.EntryPointNotFoundException("'get_realtype' is not available for the loaded IDA SDK version.");
+        return _get_realtype(p0, p1);
+    }
+
     public static byte @get_redo_action_label(QString* p0)
     {
         if ((nint)_get_redo_action_label == 0) throw new System.EntryPointNotFoundException("'get_redo_action_label' is not available for the loaded IDA SDK version.");
@@ -5482,12 +6306,6 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_get_root_filename == 0) throw new System.EntryPointNotFoundException("'get_root_filename' is not available for the loaded IDA SDK version.");
         return _get_root_filename(p0, p1);
-    }
-
-    public static byte @get_scalar_bt(int p0)
-    {
-        if ((nint)_get_scalar_bt == 0) throw new System.EntryPointNotFoundException("'get_scalar_bt' is not available for the loaded IDA SDK version.");
-        return _get_scalar_bt(p0);
     }
 
     public static ulong @get_segm_base(void* p0)
@@ -5544,16 +6362,82 @@ public static unsafe partial class IdaNative
         return _get_segment_alignment(p0);
     }
 
+    public static ulong @get_segment_base(ulong p0)
+    {
+        if ((nint)_get_segment_base == 0) throw new System.EntryPointNotFoundException("'get_segment_base' is not available for the loaded IDA SDK version.");
+        return _get_segment_base(p0);
+    }
+
+    public static nint @get_segment_class(QString* p0, ulong p1)
+    {
+        if ((nint)_get_segment_class == 0) throw new System.EntryPointNotFoundException("'get_segment_class' is not available for the loaded IDA SDK version.");
+        return _get_segment_class(p0, p1);
+    }
+
     public static nint @get_segment_cmt(QString* p0, void* p1, byte p2)
     {
         if ((nint)_get_segment_cmt == 0) throw new System.EntryPointNotFoundException("'get_segment_cmt' is not available for the loaded IDA SDK version.");
         return _get_segment_cmt(p0, p1, p2);
     }
 
+    public static nint @get_segment_cmt_by_ea(QString* p0, ulong p1, byte p2)
+    {
+        if ((nint)_get_segment_cmt_by_ea == 0) throw new System.EntryPointNotFoundException("'get_segment_cmt_by_ea' is not available for the loaded IDA SDK version.");
+        return _get_segment_cmt_by_ea(p0, p1, p2);
+    }
+
     public static byte* @get_segment_combination(byte p0)
     {
         if ((nint)_get_segment_combination == 0) throw new System.EntryPointNotFoundException("'get_segment_combination' is not available for the loaded IDA SDK version.");
         return _get_segment_combination(p0);
+    }
+
+    public static ulong @get_segment_ea(ulong p0)
+    {
+        if ((nint)_get_segment_ea == 0) throw new System.EntryPointNotFoundException("'get_segment_ea' is not available for the loaded IDA SDK version.");
+        return _get_segment_ea(p0);
+    }
+
+    public static ulong @get_segment_ea_by_name(byte* p0)
+    {
+        if ((nint)_get_segment_ea_by_name == 0) throw new System.EntryPointNotFoundException("'get_segment_ea_by_name' is not available for the loaded IDA SDK version.");
+        return _get_segment_ea_by_name(p0);
+    }
+
+    public static ulong @get_segment_ea_by_num(int p0)
+    {
+        if ((nint)_get_segment_ea_by_num == 0) throw new System.EntryPointNotFoundException("'get_segment_ea_by_num' is not available for the loaded IDA SDK version.");
+        return _get_segment_ea_by_num(p0);
+    }
+
+    public static ulong @get_segment_ea_by_sel(ulong p0)
+    {
+        if ((nint)_get_segment_ea_by_sel == 0) throw new System.EntryPointNotFoundException("'get_segment_ea_by_sel' is not available for the loaded IDA SDK version.");
+        return _get_segment_ea_by_sel(p0);
+    }
+
+    public static byte @get_segment_info(void* p0, ulong p1, int p2)
+    {
+        if ((nint)_get_segment_info == 0) throw new System.EntryPointNotFoundException("'get_segment_info' is not available for the loaded IDA SDK version.");
+        return _get_segment_info(p0, p1, p2);
+    }
+
+    public static byte @get_segment_info_by_num(void* p0, int p1, int p2)
+    {
+        if ((nint)_get_segment_info_by_num == 0) throw new System.EntryPointNotFoundException("'get_segment_info_by_num' is not available for the loaded IDA SDK version.");
+        return _get_segment_info_by_num(p0, p1, p2);
+    }
+
+    public static nint @get_segment_name(QString* p0, ulong p1, int p2)
+    {
+        if ((nint)_get_segment_name == 0) throw new System.EntryPointNotFoundException("'get_segment_name' is not available for the loaded IDA SDK version.");
+        return _get_segment_name(p0, p1, p2);
+    }
+
+    public static ulong @get_segment_para(ulong p0)
+    {
+        if ((nint)_get_segment_para == 0) throw new System.EntryPointNotFoundException("'get_segment_para' is not available for the loaded IDA SDK version.");
+        return _get_segment_para(p0);
     }
 
     public static nint @get_segment_translations(void* p0, ulong p1)
@@ -5596,6 +6480,18 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_get_sourcefile == 0) throw new System.EntryPointNotFoundException("'get_sourcefile' is not available for the loaded IDA SDK version.");
         return _get_sourcefile(p0, p1);
+    }
+
+    public static byte @get_sourcefile_by_ea(QString* p0, ulong p1, void* p2)
+    {
+        if ((nint)_get_sourcefile_by_ea == 0) throw new System.EntryPointNotFoundException("'get_sourcefile_by_ea' is not available for the loaded IDA SDK version.");
+        return _get_sourcefile_by_ea(p0, p1, p2);
+    }
+
+    public static nuint @get_sourcefiles_qty()
+    {
+        if ((nint)_get_sourcefiles_qty == 0) throw new System.EntryPointNotFoundException("'get_sourcefiles_qty' is not available for the loaded IDA SDK version.");
+        return _get_sourcefiles_qty();
     }
 
     public static long @get_sp_delta(void* p0, ulong p1)
@@ -5682,6 +6578,12 @@ public static unsafe partial class IdaNative
         return _get_strlist_item(p0, p1);
     }
 
+    public static byte @get_strlist_item_ex(void* p0, nuint p1)
+    {
+        if ((nint)_get_strlist_item_ex == 0) throw new System.EntryPointNotFoundException("'get_strlist_item_ex' is not available for the loaded IDA SDK version.");
+        return _get_strlist_item_ex(p0, p1);
+    }
+
     public static void* @get_strlist_options()
     {
         if ((nint)_get_strlist_options == 0) throw new System.EntryPointNotFoundException("'get_strlist_options' is not available for the loaded IDA SDK version.");
@@ -5716,6 +6618,30 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_get_switch_info == 0) throw new System.EntryPointNotFoundException("'get_switch_info' is not available for the loaded IDA SDK version.");
         return _get_switch_info(p0, p1);
+    }
+
+    public static ulong @get_tail_owner(ulong p0)
+    {
+        if ((nint)_get_tail_owner == 0) throw new System.EntryPointNotFoundException("'get_tail_owner' is not available for the loaded IDA SDK version.");
+        return _get_tail_owner(p0);
+    }
+
+    public static ulong @get_tail_referer(ulong p0, nuint p1)
+    {
+        if ((nint)_get_tail_referer == 0) throw new System.EntryPointNotFoundException("'get_tail_referer' is not available for the loaded IDA SDK version.");
+        return _get_tail_referer(p0, p1);
+    }
+
+    public static nuint @get_tail_referer_qty(ulong p0)
+    {
+        if ((nint)_get_tail_referer_qty == 0) throw new System.EntryPointNotFoundException("'get_tail_referer_qty' is not available for the loaded IDA SDK version.");
+        return _get_tail_referer_qty(p0);
+    }
+
+    public static byte @get_tail_referers(void* p0, ulong p1)
+    {
+        if ((nint)_get_tail_referers == 0) throw new System.EntryPointNotFoundException("'get_tail_referers' is not available for the loaded IDA SDK version.");
+        return _get_tail_referers(p0, p1);
     }
 
     public static byte @get_tid_name(QString* p0, ulong p1)
@@ -5940,6 +6866,12 @@ public static unsafe partial class IdaNative
         return _getn_selector(p0, p1, p2);
     }
 
+    public static byte @getn_sourcefile(void* p0, nuint p1)
+    {
+        if ((nint)_getn_sourcefile == 0) throw new System.EntryPointNotFoundException("'getn_sourcefile' is not available for the loaded IDA SDK version.");
+        return _getn_sourcefile(p0, p1);
+    }
+
     public static byte @getn_sreg_range(void* p0, int p1, int p2)
     {
         if ((nint)_getn_sreg_range == 0) throw new System.EntryPointNotFoundException("'getn_sreg_range' is not available for the loaded IDA SDK version.");
@@ -5998,6 +6930,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_has_external_refs == 0) throw new System.EntryPointNotFoundException("'has_external_refs' is not available for the loaded IDA SDK version.");
         return _has_external_refs(p0, p1);
+    }
+
+    public static byte @has_external_refs_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_has_external_refs_ea == 0) throw new System.EntryPointNotFoundException("'has_external_refs_ea' is not available for the loaded IDA SDK version.");
+        return _has_external_refs_ea(p0, p1);
     }
 
     public static byte @has_insn_feature(ushort p0, uint p1)
@@ -6112,6 +7050,24 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_import_module == 0) throw new System.EntryPointNotFoundException("'import_module' is not available for the loaded IDA SDK version.");
         _import_module(p0, p1, p2, p3, p4);
+    }
+
+    public static byte @indexer_is_enabled()
+    {
+        if ((nint)_indexer_is_enabled == 0) throw new System.EntryPointNotFoundException("'indexer_is_enabled' is not available for the loaded IDA SDK version.");
+        return _indexer_is_enabled();
+    }
+
+    public static void* @indexer_match(nuint p0, QString* p1, void* p2)
+    {
+        if ((nint)_indexer_match == 0) throw new System.EntryPointNotFoundException("'indexer_match' is not available for the loaded IDA SDK version.");
+        return _indexer_match(p0, p1, p2);
+    }
+
+    public static void* @indexer_match_all(QString* p0, void* p1)
+    {
+        if ((nint)_indexer_match_all == 0) throw new System.EntryPointNotFoundException("'indexer_match_all' is not available for the loaded IDA SDK version.");
+        return _indexer_match_all(p0, p1);
     }
 
     public static int @init_database(int p0, byte** p1, int* p2)
@@ -6384,6 +7340,24 @@ public static unsafe partial class IdaNative
         return _is_func_locked(p0);
     }
 
+    public static byte @is_func_locked_ea(ulong p0)
+    {
+        if ((nint)_is_func_locked_ea == 0) throw new System.EntryPointNotFoundException("'is_func_locked_ea' is not available for the loaded IDA SDK version.");
+        return _is_func_locked_ea(p0);
+    }
+
+    public static byte @is_function_entry(ulong p0)
+    {
+        if ((nint)_is_function_entry == 0) throw new System.EntryPointNotFoundException("'is_function_entry' is not available for the loaded IDA SDK version.");
+        return _is_function_entry(p0);
+    }
+
+    public static byte @is_function_tail(ulong p0)
+    {
+        if ((nint)_is_function_tail == 0) throw new System.EntryPointNotFoundException("'is_function_tail' is not available for the loaded IDA SDK version.");
+        return _is_function_tail(p0);
+    }
+
     public static byte @is_ident(byte* p0)
     {
         if ((nint)_is_ident == 0) throw new System.EntryPointNotFoundException("'is_ident' is not available for the loaded IDA SDK version.");
@@ -6456,6 +7430,12 @@ public static unsafe partial class IdaNative
         return _is_name_defined_locally(p0, p1, p2, p3, p4);
     }
 
+    public static byte @is_name_defined_locally_ea(ulong p0, byte* p1, int p2, ulong p3, ulong p4)
+    {
+        if ((nint)_is_name_defined_locally_ea == 0) throw new System.EntryPointNotFoundException("'is_name_defined_locally_ea' is not available for the loaded IDA SDK version.");
+        return _is_name_defined_locally_ea(p0, p1, p2, p3, p4);
+    }
+
     public static byte @is_numop(ulong p0, int p1)
     {
         if ((nint)_is_numop == 0) throw new System.EntryPointNotFoundException("'is_numop' is not available for the loaded IDA SDK version.");
@@ -6510,6 +7490,18 @@ public static unsafe partial class IdaNative
         return _is_ret_insn(p0, p1);
     }
 
+    public static byte @is_same_fchunk(ulong p0, ulong p1)
+    {
+        if ((nint)_is_same_fchunk == 0) throw new System.EntryPointNotFoundException("'is_same_fchunk' is not available for the loaded IDA SDK version.");
+        return _is_same_fchunk(p0, p1);
+    }
+
+    public static byte @is_same_segment(ulong p0, ulong p1)
+    {
+        if ((nint)_is_same_segment == 0) throw new System.EntryPointNotFoundException("'is_same_segment' is not available for the loaded IDA SDK version.");
+        return _is_same_segment(p0, p1);
+    }
+
     public static byte @is_seg(ulong p0, int p1)
     {
         if ((nint)_is_seg == 0) throw new System.EntryPointNotFoundException("'is_seg' is not available for the loaded IDA SDK version.");
@@ -6520,6 +7512,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_is_segm_locked == 0) throw new System.EntryPointNotFoundException("'is_segm_locked' is not available for the loaded IDA SDK version.");
         return _is_segm_locked(p0);
+    }
+
+    public static byte @is_segment_locked(ulong p0)
+    {
+        if ((nint)_is_segment_locked == 0) throw new System.EntryPointNotFoundException("'is_segment_locked' is not available for the loaded IDA SDK version.");
+        return _is_segment_locked(p0);
     }
 
     public static byte @is_spec_ea(ulong p0)
@@ -6604,6 +7602,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_is_weak_name == 0) throw new System.EntryPointNotFoundException("'is_weak_name' is not available for the loaded IDA SDK version.");
         return _is_weak_name(p0);
+    }
+
+    public static void @iterate_func_chunks_ea(ulong p0, void* p1, byte p2)
+    {
+        if ((nint)_iterate_func_chunks_ea == 0) throw new System.EntryPointNotFoundException("'iterate_func_chunks_ea' is not available for the loaded IDA SDK version.");
+        _iterate_func_chunks_ea(p0, p1, p2);
     }
 
     public static byte* @itext(int p0)
@@ -6924,10 +7928,22 @@ public static unsafe partial class IdaNative
         _lock_func_range(p0, p1);
     }
 
+    public static void @lock_func_range_ea(ulong p0, byte p1)
+    {
+        if ((nint)_lock_func_range_ea == 0) throw new System.EntryPointNotFoundException("'lock_func_range_ea' is not available for the loaded IDA SDK version.");
+        _lock_func_range_ea(p0, p1);
+    }
+
     public static void @lock_segm(void* p0, byte p1)
     {
         if ((nint)_lock_segm == 0) throw new System.EntryPointNotFoundException("'lock_segm' is not available for the loaded IDA SDK version.");
         _lock_segm(p0, p1);
+    }
+
+    public static void @lock_segment_by_ea(ulong p0, byte p1)
+    {
+        if ((nint)_lock_segment_by_ea == 0) throw new System.EntryPointNotFoundException("'lock_segment_by_ea' is not available for the loaded IDA SDK version.");
+        _lock_segment_by_ea(p0, p1);
     }
 
     public static int @log2ceil(ulong p0)
@@ -7078,6 +8094,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_move_segm_strerror == 0) throw new System.EntryPointNotFoundException("'move_segm_strerror' is not available for the loaded IDA SDK version.");
         return _move_segm_strerror(p0);
+    }
+
+    public static int @move_segment(ulong p0, ulong p1, int p2)
+    {
+        if ((nint)_move_segment == 0) throw new System.EntryPointNotFoundException("'move_segment' is not available for the loaded IDA SDK version.");
+        return _move_segment(p0, p1, p2);
     }
 
     public static byte @name_requires_qualifier(QString* p0, ulong p1, byte* p2, ulong p3)
@@ -8910,6 +9932,12 @@ public static unsafe partial class IdaNative
         _reanalyze_function(p0, p1, p2, p3);
     }
 
+    public static void @reanalyze_function_ea(ulong p0, ulong p1, ulong p2, byte p3)
+    {
+        if ((nint)_reanalyze_function_ea == 0) throw new System.EntryPointNotFoundException("'reanalyze_function_ea' is not available for the loaded IDA SDK version.");
+        _reanalyze_function_ea(p0, p1, p2, p3);
+    }
+
     public static byte @reanalyze_noret_flag(ulong p0)
     {
         if ((nint)_reanalyze_noret_flag == 0) throw new System.EntryPointNotFoundException("'reanalyze_noret_flag' is not available for the loaded IDA SDK version.");
@@ -8926,6 +9954,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_rebuild_nlist == 0) throw new System.EntryPointNotFoundException("'rebuild_nlist' is not available for the loaded IDA SDK version.");
         _rebuild_nlist();
+    }
+
+    public static byte @recalc_func_spd_for_basic_block(ulong p0, ulong p1)
+    {
+        if ((nint)_recalc_func_spd_for_basic_block == 0) throw new System.EntryPointNotFoundException("'recalc_func_spd_for_basic_block' is not available for the loaded IDA SDK version.");
+        return _recalc_func_spd_for_basic_block(p0, p1);
     }
 
     public static byte @recalc_spd(ulong p0)
@@ -8976,6 +10010,18 @@ public static unsafe partial class IdaNative
         return _reg_exists(p0, p1);
     }
 
+    public static byte @reg_finder94_find_reg_value_info(void* p0, ulong p1, int p2, int p3)
+    {
+        if ((nint)_reg_finder94_find_reg_value_info == 0) throw new System.EntryPointNotFoundException("'reg_finder94_find_reg_value_info' is not available for the loaded IDA SDK version.");
+        return _reg_finder94_find_reg_value_info(p0, p1, p2, p3);
+    }
+
+    public static void @reg_finder94_make_rfop(void* p0, void* p1, void* p2, void* p3, ulong p4)
+    {
+        if ((nint)_reg_finder94_make_rfop == 0) throw new System.EntryPointNotFoundException("'reg_finder94_make_rfop' is not available for the loaded IDA SDK version.");
+        _reg_finder94_make_rfop(p0, p1, p2, p3, p4);
+    }
+
     public static byte @reg_finder_calc_op_addr(void* p0, void* p1, void* p2, void* p3, ulong p4, ulong p5, int p6)
     {
         if ((nint)_reg_finder_calc_op_addr == 0) throw new System.EntryPointNotFoundException("'reg_finder_calc_op_addr' is not available for the loaded IDA SDK version.");
@@ -8998,6 +10044,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_reg_finder_dtr == 0) throw new System.EntryPointNotFoundException("'reg_finder_dtr' is not available for the loaded IDA SDK version.");
         _reg_finder_dtr(p0);
+    }
+
+    public static void @reg_finder_emulate_binary_op_shifted(void* p0, void* p1, int p2, void* p3, void* p4, int p5, byte p6, int p7, byte p8, void* p9, ulong p10, ulong p11)
+    {
+        if ((nint)_reg_finder_emulate_binary_op_shifted == 0) throw new System.EntryPointNotFoundException("'reg_finder_emulate_binary_op_shifted' is not available for the loaded IDA SDK version.");
+        _reg_finder_emulate_binary_op_shifted(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11);
     }
 
     public static byte @reg_finder_emulate_mem_read(void* p0, void* p1, void* p2, int p3, byte p4, void* p5)
@@ -9072,6 +10124,18 @@ public static unsafe partial class IdaNative
         _reg_update_strlist(p0, p1, p2, p3, p4);
     }
 
+    public static void @reg_value_base_dstr(void* p0, QString* p1, void* p2)
+    {
+        if ((nint)_reg_value_base_dstr == 0) throw new System.EntryPointNotFoundException("'reg_value_base_dstr' is not available for the loaded IDA SDK version.");
+        _reg_value_base_dstr(p0, p1, p2);
+    }
+
+    public static int @reg_value_base_vals_union(void* p0, void* p1)
+    {
+        if ((nint)_reg_value_base_vals_union == 0) throw new System.EntryPointNotFoundException("'reg_value_base_vals_union' is not available for the loaded IDA SDK version.");
+        return _reg_value_base_vals_union(p0, p1);
+    }
+
     public static void @reg_value_def_dstr(void* p0, QString* p1, int p2, void* p3)
     {
         if ((nint)_reg_value_def_dstr == 0) throw new System.EntryPointNotFoundException("'reg_value_def_dstr' is not available for the loaded IDA SDK version.");
@@ -9094,6 +10158,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_reg_write_strlist == 0) throw new System.EntryPointNotFoundException("'reg_write_strlist' is not available for the loaded IDA SDK version.");
         _reg_write_strlist(p0, p1);
+    }
+
+    public static int @regarg_t__compare(void* p0, void* p1)
+    {
+        if ((nint)_regarg_t__compare == 0) throw new System.EntryPointNotFoundException("'regarg_t__compare' is not available for the loaded IDA SDK version.");
+        return _regarg_t__compare(p0, p1);
     }
 
     public static int @regex_match(byte* p0, byte* p1, byte p2)
@@ -9142,6 +10212,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_register_post_event_visitor == 0) throw new System.EntryPointNotFoundException("'register_post_event_visitor' is not available for the loaded IDA SDK version.");
         return _register_post_event_visitor(p0, p1, p2);
+    }
+
+    public static int @regvar_t__compare(void* p0, void* p1)
+    {
+        if ((nint)_regvar_t__compare == 0) throw new System.EntryPointNotFoundException("'regvar_t__compare' is not available for the loaded IDA SDK version.");
+        return _regvar_t__compare(p0, p1);
     }
 
     public static byte @reload_file(byte* p0, byte p1)
@@ -9198,6 +10274,12 @@ public static unsafe partial class IdaNative
         return _remove_func_tail(p0, p1);
     }
 
+    public static byte @remove_func_tail_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_remove_func_tail_ea == 0) throw new System.EntryPointNotFoundException("'remove_func_tail_ea' is not available for the loaded IDA SDK version.");
+        return _remove_func_tail_ea(p0, p1);
+    }
+
     public static byte @remove_tinfo_pointer(TypeInfo* p0, byte** p1, void* p2)
     {
         if ((nint)_remove_tinfo_pointer == 0) throw new System.EntryPointNotFoundException("'remove_tinfo_pointer' is not available for the loaded IDA SDK version.");
@@ -9214,6 +10296,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_rename_entry == 0) throw new System.EntryPointNotFoundException("'rename_entry' is not available for the loaded IDA SDK version.");
         return _rename_entry(p0, p1, p2);
+    }
+
+    public static int @rename_func_regvar(ulong p0, nint p1, byte* p2)
+    {
+        if ((nint)_rename_func_regvar == 0) throw new System.EntryPointNotFoundException("'rename_func_regvar' is not available for the loaded IDA SDK version.");
+        return _rename_func_regvar(p0, p1, p2);
     }
 
     public static int @rename_regvar(void* p0, void* p1, byte* p2)
@@ -9252,6 +10340,12 @@ public static unsafe partial class IdaNative
         _reset_dirtree(p0);
     }
 
+    public static byte @resolve_field_path(void* p0, void* p1, byte* p2)
+    {
+        if ((nint)_resolve_field_path == 0) throw new System.EntryPointNotFoundException("'resolve_field_path' is not available for the loaded IDA SDK version.");
+        return _resolve_field_path(p0, p1, p2);
+    }
+
     public static byte* @resolve_typedef(void* p0, byte* p1)
     {
         if ((nint)_resolve_typedef == 0) throw new System.EntryPointNotFoundException("'resolve_typedef' is not available for the loaded IDA SDK version.");
@@ -9286,18 +10380,6 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_rotate_left == 0) throw new System.EntryPointNotFoundException("'rotate_left' is not available for the loaded IDA SDK version.");
         return _rotate_left(p0, p1, p2, p3);
-    }
-
-    public static uint @round_down_power2(uint p0)
-    {
-        if ((nint)_round_down_power2 == 0) throw new System.EntryPointNotFoundException("'round_down_power2' is not available for the loaded IDA SDK version.");
-        return _round_down_power2(p0);
-    }
-
-    public static uint @round_up_power2(uint p0)
-    {
-        if ((nint)_round_up_power2 == 0) throw new System.EntryPointNotFoundException("'round_up_power2' is not available for the loaded IDA SDK version.");
-        return _round_up_power2(p0);
     }
 
     public static byte @run_plugin(void* p0, nuint p1)
@@ -9370,6 +10452,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_segm_adjust_ea == 0) throw new System.EntryPointNotFoundException("'segm_adjust_ea' is not available for the loaded IDA SDK version.");
         return _segm_adjust_ea(p0, p1);
+    }
+
+    public static byte @segment_info_t__visible_name(void* p0, QString* p1)
+    {
+        if ((nint)_segment_info_t__visible_name == 0) throw new System.EntryPointNotFoundException("'segment_info_t__visible_name' is not available for the loaded IDA SDK version.");
+        return _segment_info_t__visible_name(p0, p1);
     }
 
     public static byte @segtype(ulong p0)
@@ -9528,6 +10616,12 @@ public static unsafe partial class IdaNative
         return _set_default_sreg_value(p0, p1, p2);
     }
 
+    public static byte @set_default_sreg_value_ea(ulong p0, int p1, ulong p2)
+    {
+        if ((nint)_set_default_sreg_value_ea == 0) throw new System.EntryPointNotFoundException("'set_default_sreg_value_ea' is not available for the loaded IDA SDK version.");
+        return _set_default_sreg_value_ea(p0, p1, p2);
+    }
+
     public static byte @set_dummy_name(ulong p0, ulong p1)
     {
         if ((nint)_set_dummy_name == 0) throw new System.EntryPointNotFoundException("'set_dummy_name' is not available for the loaded IDA SDK version.");
@@ -9576,10 +10670,28 @@ public static unsafe partial class IdaNative
         return _set_frame_member_type(p0, p1, p2, p3, p4);
     }
 
+    public static byte @set_frame_member_type_ea(ulong p0, ulong p1, TypeInfo* p2, void* p3, uint p4)
+    {
+        if ((nint)_set_frame_member_type_ea == 0) throw new System.EntryPointNotFoundException("'set_frame_member_type_ea' is not available for the loaded IDA SDK version.");
+        return _set_frame_member_type_ea(p0, p1, p2, p3, p4);
+    }
+
     public static byte @set_frame_size(void* p0, ulong p1, ushort p2, ulong p3)
     {
         if ((nint)_set_frame_size == 0) throw new System.EntryPointNotFoundException("'set_frame_size' is not available for the loaded IDA SDK version.");
         return _set_frame_size(p0, p1, p2, p3);
+    }
+
+    public static byte @set_frame_size_ea(ulong p0, ulong p1, ushort p2, ulong p3)
+    {
+        if ((nint)_set_frame_size_ea == 0) throw new System.EntryPointNotFoundException("'set_frame_size_ea' is not available for the loaded IDA SDK version.");
+        return _set_frame_size_ea(p0, p1, p2, p3);
+    }
+
+    public static byte @set_func_auto_spd(ulong p0, ulong p1, long p2)
+    {
+        if ((nint)_set_func_auto_spd == 0) throw new System.EntryPointNotFoundException("'set_func_auto_spd' is not available for the loaded IDA SDK version.");
+        return _set_func_auto_spd(p0, p1, p2);
     }
 
     public static byte @set_func_cmt(void* p0, byte* p1, byte p2)
@@ -9588,10 +10700,34 @@ public static unsafe partial class IdaNative
         return _set_func_cmt(p0, p1, p2);
     }
 
+    public static byte @set_func_cmt_ea(ulong p0, byte* p1, byte p2)
+    {
+        if ((nint)_set_func_cmt_ea == 0) throw new System.EntryPointNotFoundException("'set_func_cmt_ea' is not available for the loaded IDA SDK version.");
+        return _set_func_cmt_ea(p0, p1, p2);
+    }
+
     public static byte @set_func_end(ulong p0, ulong p1)
     {
         if ((nint)_set_func_end == 0) throw new System.EntryPointNotFoundException("'set_func_end' is not available for the loaded IDA SDK version.");
         return _set_func_end(p0, p1);
+    }
+
+    public static byte @set_func_entry_info(void* p0)
+    {
+        if ((nint)_set_func_entry_info == 0) throw new System.EntryPointNotFoundException("'set_func_entry_info' is not available for the loaded IDA SDK version.");
+        return _set_func_entry_info(p0);
+    }
+
+    public static byte @set_func_flag(ulong p0, ulong p1, byte p2)
+    {
+        if ((nint)_set_func_flag == 0) throw new System.EntryPointNotFoundException("'set_func_flag' is not available for the loaded IDA SDK version.");
+        return _set_func_flag(p0, p1, p2);
+    }
+
+    public static byte @set_func_flags(ulong p0, ulong p1)
+    {
+        if ((nint)_set_func_flags == 0) throw new System.EntryPointNotFoundException("'set_func_flags' is not available for the loaded IDA SDK version.");
+        return _set_func_flags(p0, p1);
     }
 
     public static int @set_func_name_if_jumpfunc(void* p0, byte* p1)
@@ -9600,10 +10736,28 @@ public static unsafe partial class IdaNative
         return _set_func_name_if_jumpfunc(p0, p1);
     }
 
+    public static int @set_func_regvar_cmt(ulong p0, nint p1, byte* p2)
+    {
+        if ((nint)_set_func_regvar_cmt == 0) throw new System.EntryPointNotFoundException("'set_func_regvar_cmt' is not available for the loaded IDA SDK version.");
+        return _set_func_regvar_cmt(p0, p1, p2);
+    }
+
+    public static int @set_func_regvar_range(ulong p0, nint p1, void* p2)
+    {
+        if ((nint)_set_func_regvar_range == 0) throw new System.EntryPointNotFoundException("'set_func_regvar_range' is not available for the loaded IDA SDK version.");
+        return _set_func_regvar_range(p0, p1, p2);
+    }
+
     public static int @set_func_start(ulong p0, ulong p1)
     {
         if ((nint)_set_func_start == 0) throw new System.EntryPointNotFoundException("'set_func_start' is not available for the loaded IDA SDK version.");
         return _set_func_start(p0, p1);
+    }
+
+    public static byte @set_function_name_if_jumpfunc(ulong p0, byte* p1)
+    {
+        if ((nint)_set_function_name_if_jumpfunc == 0) throw new System.EntryPointNotFoundException("'set_function_name_if_jumpfunc' is not available for the loaded IDA SDK version.");
+        return _set_function_name_if_jumpfunc(p0, p1);
     }
 
     public static int @set_group_selector(ulong p0, ulong p1)
@@ -9864,10 +11018,46 @@ public static unsafe partial class IdaNative
         return _set_segm_start(p0, p1, p2);
     }
 
+    public static byte @set_segment_addressing(ulong p0, nuint p1)
+    {
+        if ((nint)_set_segment_addressing == 0) throw new System.EntryPointNotFoundException("'set_segment_addressing' is not available for the loaded IDA SDK version.");
+        return _set_segment_addressing(p0, p1);
+    }
+
+    public static byte @set_segment_base_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_set_segment_base_ea == 0) throw new System.EntryPointNotFoundException("'set_segment_base_ea' is not available for the loaded IDA SDK version.");
+        return _set_segment_base_ea(p0, p1);
+    }
+
+    public static int @set_segment_class(ulong p0, byte* p1, int p2)
+    {
+        if ((nint)_set_segment_class == 0) throw new System.EntryPointNotFoundException("'set_segment_class' is not available for the loaded IDA SDK version.");
+        return _set_segment_class(p0, p1, p2);
+    }
+
     public static void @set_segment_cmt(void* p0, byte* p1, byte p2)
     {
         if ((nint)_set_segment_cmt == 0) throw new System.EntryPointNotFoundException("'set_segment_cmt' is not available for the loaded IDA SDK version.");
         _set_segment_cmt(p0, p1, p2);
+    }
+
+    public static void @set_segment_cmt_by_ea(ulong p0, byte* p1, byte p2)
+    {
+        if ((nint)_set_segment_cmt_by_ea == 0) throw new System.EntryPointNotFoundException("'set_segment_cmt_by_ea' is not available for the loaded IDA SDK version.");
+        _set_segment_cmt_by_ea(p0, p1, p2);
+    }
+
+    public static byte @set_segment_info(void* p0, int p1)
+    {
+        if ((nint)_set_segment_info == 0) throw new System.EntryPointNotFoundException("'set_segment_info' is not available for the loaded IDA SDK version.");
+        return _set_segment_info(p0, p1);
+    }
+
+    public static int @set_segment_name(ulong p0, byte* p1, int p2)
+    {
+        if ((nint)_set_segment_name == 0) throw new System.EntryPointNotFoundException("'set_segment_name' is not available for the loaded IDA SDK version.");
+        return _set_segment_name(p0, p1, p2);
     }
 
     public static byte @set_segment_translations(ulong p0, void* p1)
@@ -9910,6 +11100,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_set_tail_owner == 0) throw new System.EntryPointNotFoundException("'set_tail_owner' is not available for the loaded IDA SDK version.");
         return _set_tail_owner(p0, p1);
+    }
+
+    public static byte @set_tail_owner_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_set_tail_owner_ea == 0) throw new System.EntryPointNotFoundException("'set_tail_owner_ea' is not available for the loaded IDA SDK version.");
+        return _set_tail_owner_ea(p0, p1);
     }
 
     public static byte @set_target_assembler(int p0)
@@ -9972,10 +11168,22 @@ public static unsafe partial class IdaNative
         _set_visible_func(p0, p1);
     }
 
+    public static void @set_visible_func_ea(ulong p0, byte p1)
+    {
+        if ((nint)_set_visible_func_ea == 0) throw new System.EntryPointNotFoundException("'set_visible_func_ea' is not available for the loaded IDA SDK version.");
+        _set_visible_func_ea(p0, p1);
+    }
+
     public static void @set_visible_segm(void* p0, byte p1)
     {
         if ((nint)_set_visible_segm == 0) throw new System.EntryPointNotFoundException("'set_visible_segm' is not available for the loaded IDA SDK version.");
         _set_visible_segm(p0, p1);
+    }
+
+    public static void @set_visible_segment(ulong p0, byte p1)
+    {
+        if ((nint)_set_visible_segment == 0) throw new System.EntryPointNotFoundException("'set_visible_segment' is not available for the loaded IDA SDK version.");
+        _set_visible_segment(p0, p1);
     }
 
     public static void @set_xrefpos(ulong p0, void* p1)
@@ -10038,6 +11246,12 @@ public static unsafe partial class IdaNative
         return _skip_utf8(p0, p1);
     }
 
+    public static long @soff_to_fpoff_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_soff_to_fpoff_ea == 0) throw new System.EntryPointNotFoundException("'soff_to_fpoff_ea' is not available for the loaded IDA SDK version.");
+        return _soff_to_fpoff_ea(p0, p1);
+    }
+
     public static byte @sort_til(void* p0)
     {
         if ((nint)_sort_til == 0) throw new System.EntryPointNotFoundException("'sort_til' is not available for the loaded IDA SDK version.");
@@ -10054,6 +11268,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_std_out_segm_footer == 0) throw new System.EntryPointNotFoundException("'std_out_segm_footer' is not available for the loaded IDA SDK version.");
         _std_out_segm_footer(p0, p1);
+    }
+
+    public static void @std_out_segment_footer(void* p0, ulong p1)
+    {
+        if ((nint)_std_out_segment_footer == 0) throw new System.EntryPointNotFoundException("'std_out_segment_footer' is not available for the loaded IDA SDK version.");
+        _std_out_segment_footer(p0, p1);
     }
 
     public static nuint @stoa(QString* p0, ulong p1, ulong p2)
@@ -10146,6 +11366,12 @@ public static unsafe partial class IdaNative
         return _switch_dbctx(p0);
     }
 
+    public static void @switch_to_rust()
+    {
+        if ((nint)_switch_to_rust == 0) throw new System.EntryPointNotFoundException("'switch_to_rust' is not available for the loaded IDA SDK version.");
+        _switch_to_rust();
+    }
+
     public static void @tag_addr(QString* p0, ulong p1, byte p2)
     {
         if ((nint)_tag_addr == 0) throw new System.EntryPointNotFoundException("'tag_addr' is not available for the loaded IDA SDK version.");
@@ -10156,6 +11382,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_tag_advance == 0) throw new System.EntryPointNotFoundException("'tag_advance' is not available for the loaded IDA SDK version.");
         return _tag_advance(p0, p1);
+    }
+
+    public static ulong @tag_get_addr(byte* p0)
+    {
+        if ((nint)_tag_get_addr == 0) throw new System.EntryPointNotFoundException("'tag_get_addr' is not available for the loaded IDA SDK version.");
+        return _tag_get_addr(p0);
     }
 
     public static nint @tag_remove(QString* p0, byte* p1, int p2)
@@ -10180,6 +11412,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_tag_strlen == 0) throw new System.EntryPointNotFoundException("'tag_strlen' is not available for the loaded IDA SDK version.");
         return _tag_strlen(p0);
+    }
+
+    public static ulong @tagged_line_section_t_get_addr(void* p0, QString* p1)
+    {
+        if ((nint)_tagged_line_section_t_get_addr == 0) throw new System.EntryPointNotFoundException("'tagged_line_section_t_get_addr' is not available for the loaded IDA SDK version.");
+        return _tagged_line_section_t_get_addr(p0, p1);
     }
 
     public static byte @take_memory_snapshot(int p0)
@@ -10222,6 +11460,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_tinfo_get_func_frame == 0) throw new System.EntryPointNotFoundException("'tinfo_get_func_frame' is not available for the loaded IDA SDK version.");
         return _tinfo_get_func_frame(p0, p1);
+    }
+
+    public static byte @tinfo_get_func_frame_ea(TypeInfo* p0, ulong p1)
+    {
+        if ((nint)_tinfo_get_func_frame_ea == 0) throw new System.EntryPointNotFoundException("'tinfo_get_func_frame_ea' is not available for the loaded IDA SDK version.");
+        return _tinfo_get_func_frame_ea(p0, p1);
     }
 
     public static void @tinfo_get_innermost_udm(TypeInfo* p0, TypeInfo* p1, ulong p2, nuint* p3, ulong* p4, byte p5)
@@ -10428,6 +11672,12 @@ public static unsafe partial class IdaNative
         return _update_fpd(p0, p1);
     }
 
+    public static byte @update_fpd_ea(ulong p0, ulong p1)
+    {
+        if ((nint)_update_fpd_ea == 0) throw new System.EntryPointNotFoundException("'update_fpd_ea' is not available for the loaded IDA SDK version.");
+        return _update_fpd_ea(p0, p1);
+    }
+
     public static byte @update_func(void* p0)
     {
         if ((nint)_update_func == 0) throw new System.EntryPointNotFoundException("'update_func' is not available for the loaded IDA SDK version.");
@@ -10438,6 +11688,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_update_hidden_range == 0) throw new System.EntryPointNotFoundException("'update_hidden_range' is not available for the loaded IDA SDK version.");
         return _update_hidden_range(p0);
+    }
+
+    public static byte @update_hidden_range_info(void* p0)
+    {
+        if ((nint)_update_hidden_range_info == 0) throw new System.EntryPointNotFoundException("'update_hidden_range_info' is not available for the loaded IDA SDK version.");
+        return _update_hidden_range_info(p0);
     }
 
     public static byte @update_segm(void* p0)
@@ -10554,10 +11810,22 @@ public static unsafe partial class IdaNative
         return _vcred_process_switch(p0, p1);
     }
 
+    public static byte @vcred_reg_del_auto_connect()
+    {
+        if ((nint)_vcred_reg_del_auto_connect == 0) throw new System.EntryPointNotFoundException("'vcred_reg_del_auto_connect' is not available for the loaded IDA SDK version.");
+        return _vcred_reg_del_auto_connect();
+    }
+
     public static byte @vcred_reg_del_store_info()
     {
         if ((nint)_vcred_reg_del_store_info == 0) throw new System.EntryPointNotFoundException("'vcred_reg_del_store_info' is not available for the loaded IDA SDK version.");
         return _vcred_reg_del_store_info();
+    }
+
+    public static void @vcred_reg_set_auto_connect(byte p0)
+    {
+        if ((nint)_vcred_reg_set_auto_connect == 0) throw new System.EntryPointNotFoundException("'vcred_reg_set_auto_connect' is not available for the loaded IDA SDK version.");
+        _vcred_reg_set_auto_connect(p0);
     }
 
     public static void @vcred_reg_set_site(void* p0, byte* p1)
@@ -10570,6 +11838,12 @@ public static unsafe partial class IdaNative
     {
         if ((nint)_vcred_reg_set_store_info == 0) throw new System.EntryPointNotFoundException("'vcred_reg_set_store_info' is not available for the loaded IDA SDK version.");
         _vcred_reg_set_store_info(p0);
+    }
+
+    public static byte @vcred_reg_should_auto_connect()
+    {
+        if ((nint)_vcred_reg_should_auto_connect == 0) throw new System.EntryPointNotFoundException("'vcred_reg_should_auto_connect' is not available for the loaded IDA SDK version.");
+        return _vcred_reg_should_auto_connect();
     }
 
     public static byte @vcred_reg_should_store_info()

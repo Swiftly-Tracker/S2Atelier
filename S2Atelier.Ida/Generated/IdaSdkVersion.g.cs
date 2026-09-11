@@ -6,4 +6,5 @@ public enum IdaSdkVersion
 
     V92,
     V93,
+    V94,
 }

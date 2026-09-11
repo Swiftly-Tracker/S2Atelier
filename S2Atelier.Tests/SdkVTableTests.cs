@@ -35,6 +35,21 @@ internal static class SdkVTableTests
         var used = new HashSet<string>();
         Check(SdkVTableMatching.UniqueName("Known", 0, used) == "Known", "SDK spelling preserved");
         Check(SdkVTableMatching.UniqueName("Known", 2, used) == "Known_slot_2", "overload disambiguation");
+        bool BaseOf(string derived, string ancestor) => (derived, ancestor) is
+            ("Derived", "Base") or ("Leaf", "Derived") or ("Leaf", "Base") or ("Sibling", "Base");
+        Check(SdkFunctionBinding.SelectImplementationOwner(["Leaf", "Derived"], BaseOf) == "Derived",
+            "override inherited by leaf must be named for observed overriding owner");
+        Check(SdkFunctionBinding.SelectImplementationOwner(["Derived", "Leaf", "Base"], BaseOf) == "Base",
+            "shared unchanged implementation belongs to observed base");
+        Check(SdkFunctionBinding.SelectImplementationOwner(["Derived", "Sibling"], BaseOf) == null,
+            "must not invent an unobserved common base for folded sibling implementations");
+        Check(SdkFunctionBinding.SelectImplementationOwner(["Derived", "Sibling", "Base"], BaseOf) == "Base",
+            "observed common base can resolve sibling sharing");
+        Check(SdkFunctionBinding.SelectImplementationOwner(["Derived", "Other"], BaseOf) == null &&
+            SdkFunctionBinding.SelectImplementationOwner(["Derived", null], BaseOf) == null,
+            "unrelated/unknown owners remain protected");
+        Check(SdkFunctionBinding.SelectImplementationOwner(["Derived", "Base"], (_, _) => false) == null,
+            "nonzero-offset subobject sharing is not a primary inheritance relation");
         var ownership = new SdkFunctionOwnership("Base::Known", "fingerprint", "base.h");
         string comment = SdkFunctionBinding.MergeOwnership("user comment", ownership);
         Check(SdkFunctionBinding.ReadOwnership(comment) == ownership, "ownership roundtrip");
@@ -80,7 +95,7 @@ internal static class SdkVTableTests
                     virtual void unk001() = 0;
                     virtual ~SdkBase() = default;
                 };
-                class SdkOther { public: virtual bool OtherCall(double amount) const = 0; };
+                class SdkOther { public: virtual bool OtherCall(double amount) const volatile = 0; };
                 class SdkDerived : public SdkBase, public SdkOther { public: virtual int More(int value) = 0; };
                 """);
             string localHeader = Path.Combine(directory, "local.hpp");
@@ -89,11 +104,12 @@ internal static class SdkVTableTests
                 struct SdkOther { void *__vftable; };
                 struct SdkDerived : SdkBase, SdkOther { unsigned char derivedFields[16]; };
                 struct SdkMissing : SdkBase { };
+                struct SdkLeaf : SdkMissing { };
                 """);
             SchemaImport.ConfigureClang(directory, platform, true);
             Check(SchemaImport.ParseHeader(localHeader, false, true) == 0, "import fixture schema layouts");
             var classes = new[] { Class("SdkBase"), Class("SdkOther"), Class("SdkDerived", "SdkBase", "SdkOther"),
-                Class("SdkMissing", "SdkBase") }.ToDictionary(x => x.Name);
+                Class("SdkMissing", "SdkBase"), Class("SdkLeaf", "SdkMissing") }.ToDictionary(x => x.Name);
             var selection = new SchemaSelection("test", classes, new Dictionary<string, SchemaEnum>(),
                 new HashSet<string>(), new HashSet<string>(), new HashSet<string>());
             Check(IdaNative.get_func_qty() > 0, "fixture must have a function");
@@ -118,7 +134,7 @@ internal static class SdkVTableTests
             Check(slots[(tables[2].AddressPoint, 0)].TryGetFunction(out var constFunction), "const method prototype");
             TypeInfo constThis = new() { Typid = (ulong)IdaNative.get_tinfo_property(constFunction.Typid, 25) };
             TypeInfo constObject = new() { Typid = (ulong)IdaNative.get_tinfo_property(constThis.Typid, 9) };
-            try { Check((IdaNative.get_tinfo_property(constObject.Typid, 1) & 0x40) != 0, "const this qualifier preserved"); }
+            try { Check((IdaNative.get_tinfo_property(constObject.Typid, 1) & 0xc0) == 0xc0, "const/volatile this qualifiers preserved"); }
             finally { constObject.Dispose(); constThis.Dispose(); constFunction.Dispose(); }
             var derivedTable = new SchemaVTable("SdkDerived", 0x610000300, 0, "SdkDerived", [], new ulong[8]);
             var derivedSlots = sdk.Resolve([derivedTable], selection);
@@ -128,6 +144,32 @@ internal static class SdkVTableTests
             Check(ValveImplementationTypes.Load("SdkBase", out var schema), "schema preserved");
             try { Check(IdaNative.get_tinfo_size(null, schema.Typid, 0) == 32, "SDK replaced schema layout"); }
             finally { schema.Dispose(); }
+            var repeatedTables = Enumerable.Range(0, 64).Select(i => tables[0] with
+                { AddressPoint = 0x630000000UL + (ulong)i * 0x100 }).ToArray();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var repeatedSlots = sdk.Resolve(repeatedTables, selection);
+            Check(repeatedSlots.Count == repeatedTables.Length * baseDefinition.Slots.Count,
+                "repeated table slots preserved");
+            Check(diagnostics.Last().Contains($"dependency-walks={baseDefinition.Slots.Count},"),
+                "dependencies should be visited once per SDK prototype, not once per table");
+            Check(repeatedSlots.Values.All(s => s.Prototype.Type.Length < 1024),
+                "portable prototypes must retain references instead of expanding schema definitions");
+            Console.WriteLine($"SDK repeated-table regression: {repeatedTables.Length} tables, " +
+                $"{repeatedSlots.Count} slots, {clock.Elapsed.TotalMilliseconds:F1} ms.");
+            Check(known!.TryGetFunction(out var adjusted), "load prototype for this rewrite");
+            TypeInfo expectedPointer = default, actualPointer = default;
+            byte* expectedDeclaration = Utf8.Allocate("SdkDerived *__s2_expected;");
+            try
+            {
+                Check(IdaNative.parse_decl(&expectedPointer, null, IdaNative.get_idati(), expectedDeclaration, 1 | 8 | 128) != 0,
+                    "parse reference this pointer for equivalence test");
+                Check(Hl2SdkVTables.AdjustThis(ref adjusted, "SdkDerived"), "direct this construction");
+                actualPointer.Typid = (ulong)IdaNative.get_tinfo_property(adjusted.Typid, 25);
+                Check(IdaNative.compare_tinfo(expectedPointer.Typid, actualPointer.Typid, 0) != 0,
+                    "direct this pointer must equal parser output");
+                Check(!Hl2SdkVTables.AdjustThis(ref adjusted, "MissingSchemaOwner"), "unknown owner rejected");
+            }
+            finally { actualPointer.Dispose(); expectedPointer.Dispose(); adjusted.Dispose(); Utf8.Free(expectedDeclaration); }
             sdk.Dispose(); // Portable output must remain valid after freeing every source TIL.
             Check(known!.TryGetFunction(out var function), "portable prototype after TIL disposal");
             function.Dispose();
@@ -206,12 +248,48 @@ internal static class SdkVTableTests
                 "user changes overwritten");
             var conflictTables = tables.Select((t, i) => i == 1 ? t with { Functions = [target, 0, 0, 0, 0, 0] } : t).ToArray();
             result = SdkFunctionBinding.Bind(conflictTables, slots, new HashSet<ulong>(), new HashSet<ulong>(), diagnostics.Add);
-            Check(result.Conflicts == 1, "shared this conflict not rejected");
+            Check(result.Conflicts == 0 && SchemaVTableTypes.NameAt(target) == "UserSdkName",
+                "related shared this should resolve while user naming remains protected");
             result = SdkFunctionBinding.Bind([tables[0] with { Functions = [target, target, 0, 0, 0, 0] }], slots,
                 new HashSet<ulong>(), new HashSet<ulong>(), diagnostics.Add);
             Check(result.Conflicts == 1, "shared address with different SDK methods not rejected");
             result = SdkFunctionBinding.Bind(tables, slots, new HashSet<ulong> { target }, new HashSet<ulong>(), diagnostics.Add);
             Check(result.Bound == 0, "purecall must not be typed");
+
+            // Base has a different implementation. Missing overrides Known, and Leaf
+            // inherits that override at the same address: source declaration remains SdkBase.
+            var overrideTables = new[]
+            {
+                tables[0] with { Functions = new ulong[6] },
+                tables[1] with { Functions = [target, 0, 0, 0, 0, 0] },
+                new SchemaVTable("SdkLeaf", 0x610000500, 0, "SdkLeaf", [], [target, 0, 0, 0, 0, 0]),
+            };
+            using (var overrideSdk = Hl2SdkVTables.Load(directory, platform, selection, overrideTables, diagnostics.Add))
+            {
+                var overrideSlots = overrideSdk.Resolve(overrideTables, selection);
+                Check(overrideSlots[(overrideTables[1].AddressPoint, 0)].SourceClass == "SdkBase", "inherited declaration source");
+                byte* emptyComment = Utf8.Allocate("");
+                try { IdaNative.set_cmt(target, emptyComment, 1); }
+                finally { Utf8.Free(emptyComment); }
+                IdaNative.set_aflags(target, IdaNative.get_aflags(target) & ~0x02000000u);
+                SetName(target, "sub_OverrideFixture");
+                var overrides = SdkFunctionBinding.Bind(overrideTables.Reverse().ToArray(), overrideSlots,
+                    new HashSet<ulong>(), new HashSet<ulong>(), diagnostics.Add);
+                Check(overrides.Bound == 1 && overrides.Conflicts == 0 &&
+                    SchemaVTableTypes.NameAt(target) == "SdkMissing::Known", "derived override inherited by leaf was not named");
+                TypeInfo appliedOverride = default;
+                Check(IdaNative.get_tinfo(&appliedOverride, target) != 0, "override prototype exists");
+                try
+                {
+                    Check(overrideSlots[(overrideTables[1].AddressPoint, 0)].TryGetFunction(out var expectedOverride), "expected override prototype");
+                    try { Check(IdaNative.compare_tinfo(appliedOverride.Typid, expectedOverride.Typid, 0) != 0, "override owner this type"); }
+                    finally { expectedOverride.Dispose(); }
+                }
+                finally { appliedOverride.Dispose(); }
+                var unchanged = overrideTables.Select(t => t with { Functions = [target, 0, 0, 0, 0, 0] }).ToArray();
+                var sharedBase = SdkFunctionBinding.Bind(unchanged, overrideSlots, new HashSet<ulong>(), new HashSet<ulong>(), diagnostics.Add);
+                Check(sharedBase.Bound == 1 && SchemaVTableTypes.NameAt(target) == "SdkBase::Known", "unchanged inherited function must keep base owner");
+            }
 
             File.WriteAllText(Path.Combine(directory, "public", "broken.h"),
                 "class SdkBroken { public: virtual MissingReturn Broken() = 0; };\n");

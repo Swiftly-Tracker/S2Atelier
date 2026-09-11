@@ -92,7 +92,7 @@ public sealed partial class SchemaDatabase
 
     public static string InferProject(string binaryPath)
     {
-        string name = Path.GetFileNameWithoutExtension(binaryPath);
+        string name = Path.GetFileNameWithoutExtension(binaryPath.Replace('\\', '/'));
         if (name.StartsWith("lib", StringComparison.OrdinalIgnoreCase) && name.Length > 3)
         {
             name = name[3..];
