@@ -20,6 +20,16 @@
 
 同一请求在 queued/running/succeeded 时重复提交会返回已有任务。重试可以复用同一 tag 的草稿附件，公开的 Release 内容不自动覆盖。哈希校验或上传失败不会公开草稿，也不会清理本地工作目录。
 
+## Steam 授权 depot
+
+Workshop Tools depot 2347779 需要拥有权限的 Steam 账号。完整跟踪模式不会忽略该 depot 的下载失败。首次由 root 在 VM 交互登录并完成 Steam Guard：
+
+```sh
+/opt/s2atelier/tools/downloader/SteamDepotDownload.App -app 730 -depot 2347779 -manifest-only -username YOUR_STEAM_ACCOUNT -remember-password -dir /opt/s2atelier/state/steam-login
+```
+
+然后在 service.env 设置 `S2A_STEAM_USERNAME=YOUR_STEAM_ACCOUNT`，任务空闲时重启服务。下载器使用同一 root 用户保存的登录令牌；无需将 Steam 密码上传到 GitHub 或放进任务请求。登录令牌过期时需重新交互登录。
+
 ## HTTP API
 
 除 `/health` 外均需 `Authorization: Bearer <S2A_API_KEY>`。服务本身只监听 `127.0.0.1:5080`，Caddy 提供上述外部路径。

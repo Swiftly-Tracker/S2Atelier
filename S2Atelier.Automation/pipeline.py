@@ -129,7 +129,8 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
         source = resolve_manifest(jobdir / 'dumps', platform, int(depot))
         provenance['depots'].append(source)
         filelist.write_text(json.dumps({depot: patterns}))
-        run([root / 'tools/downloader/SteamDepotDownload.App', '-app', source['appId'], '-depot', depot,
+        auth = ['-username', os.environ['S2A_STEAM_USERNAME'], '-remember-password'] if os.environ.get('S2A_STEAM_USERNAME') else []
+        run([root / 'tools/downloader/SteamDepotDownload.App', *auth, '-app', source['appId'], '-depot', depot,
              '-manifest', source['manifestId'], '-os', platform, '-osarch', '64', '-filelist', filelist, '-dir', downloads],
             stdin=subprocess.DEVNULL)
     (jobdir / 'provenance.json').write_text(json.dumps(provenance, indent=2))
