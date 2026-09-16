@@ -83,6 +83,12 @@ def api(method, url, payload=None, path=None):
         time.sleep(2 ** attempt)
 
 
+def check_publish_access():
+    repository = api('GET', API)
+    if not repository.get('permissions', {}).get('push'):
+        raise RuntimeError('S2A_GITHUB_TOKEN requires write access to ' + REPO + '; no analysis was started.')
+
+
 def assets(release_id):
     result = []
     page = 1
