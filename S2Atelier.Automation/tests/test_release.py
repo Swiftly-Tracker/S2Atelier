@@ -58,6 +58,13 @@ class ReleaseTests(unittest.TestCase):
                        check=True, stdout=subprocess.DEVNULL)
         self.assertEqual((self.root / 'duplicates/other' / duplicate.name).read_bytes(), b'different')
 
+    def test_publish_access_fails_before_analysis(self):
+        with patch.object(release, 'api', return_value={'permissions': {'push': False}}):
+            with self.assertRaisesRegex(RuntimeError, 'write access'):
+                release.check_publish_access()
+        with patch.object(release, 'api', return_value={'permissions': {'push': True}}):
+            release.check_publish_access()
+
     def test_title(self):
         self.assertEqual(release.release_title('25218825 - 1.41.8.1 | 3 modified | Sep 09 2026 15:23:58'),
                          '25218825 - 1.41.8.1 | Sep 09 2026 15:23:58')

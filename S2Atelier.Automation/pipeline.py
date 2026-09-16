@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tarfile
 import traceback
-from release import compress, publish, cleanup_payload
+from release import compress, publish, cleanup_payload, check_publish_access
 
 
 def run(args, **kwargs):
@@ -236,6 +236,8 @@ def pipeline(root, jobfile):
     job = json.loads(jobfile.read_text())
     request = job['Request']
     jobdir = jobfile.parent
+    if request.get('PublishRelease', True):
+        check_publish_access()
     sdk = sync(root, 'hl2sdk', 'https://github.com/alliedmodders/hl2sdk.git', 'cs2')
     dumps = sync(root, 'CS2-Dumps', 'https://github.com/Swiftly-Tracker/CS2-Dumps.git', 'main')
     platforms = ('windows', 'linux') if request['Platform'] == 'all' else (request['Platform'],)
