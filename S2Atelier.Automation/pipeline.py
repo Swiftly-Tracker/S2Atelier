@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import traceback
+from release import compress, publish, cleanup_payload
 
 
 def run(args, **kwargs):
@@ -41,7 +42,10 @@ def snapshot(repo, revision, target):
 
 def sha256(path):
     with path.open('rb') as f:
-        return hashlib.file_digest(f, 'sha256').hexdigest()
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            digest.update(chunk)
+        return digest.hexdigest()
 
 
 def binary_platform(path):
@@ -56,9 +60,9 @@ def binary_platform(path):
     return None
 
 
-def resolve_manifest(snapshot_dir, platform):
+def resolve_manifest(snapshot_dir, platform, depot=None):
     """Resolve only from the archived commit, never from the mutable checkout."""
-    target_depot = {'windows': 2347771, 'linux': 2347773}[platform]
+    target_depot = depot or {'windows': 2347771, 'linux': 2347773}[platform]
     candidates = []
     for path in sorted((snapshot_dir / 'manifests').glob('*.txt')):
         content = path.read_text(encoding='utf-8-sig')
@@ -95,13 +99,9 @@ def resolve_manifest(snapshot_dir, platform):
             'manifestFile': str(path.relative_to(snapshot_dir)), 'sourceRevision': newest}
 
 
-def pipeline(root, jobfile):
-    jobdir = jobfile.parent
-    job = json.loads(jobfile.read_text())
+def analyze(root, job, jobdir, platform, sdk, dumps):
     request = job['Request']
-    platform = request['Platform']
-    sdk = sync(root, 'hl2sdk', 'https://github.com/alliedmodders/hl2sdk.git', 'cs2')
-    dumps = sync(root, 'CS2-Dumps', 'https://github.com/Swiftly-Tracker/CS2-Dumps.git', 'main')
+    jobdir.mkdir(exist_ok=True)
     revision = request['DumpsCommit']
     if not revision or not re.fullmatch(r'[0-9a-fA-F]{40}', revision):
         raise RuntimeError('A full dumpsCommit SHA is required; legacy requests must be resubmitted.')
@@ -121,13 +121,22 @@ def pipeline(root, jobfile):
     downloads = jobdir / 'binaries'
     downloads.mkdir()
     filelist = jobdir / 'filelist.json'
-    filelist.write_text(json.dumps({str(depot): ['regex:' + request['BinaryRegex']]}))
-    run([root / 'tools/downloader/SteamDepotDownload.App', '-app', resolved['appId'], '-depot', depot,
-         '-manifest', manifest, '-os', platform, '-osarch', '64', '-filelist', filelist, '-dir', downloads],
-        stdin=subprocess.DEVNULL)
+    tracked = json.loads(git(dumps, 'show', revision + ':tracked_files.json'))
+    (jobdir / 'tracked_files.json').write_text(json.dumps(tracked, indent=2))
+    selections = tracked_patterns(tracked, platform, request.get('BinaryRegex'))
+    provenance['depots'] = []
+    for depot, patterns in selections.items():
+        source = resolve_manifest(jobdir / 'dumps', platform, int(depot))
+        provenance['depots'].append(source)
+        filelist.write_text(json.dumps({depot: patterns}))
+        run([root / 'tools/downloader/SteamDepotDownload.App', '-app', source['appId'], '-depot', depot,
+             '-manifest', source['manifestId'], '-os', platform, '-osarch', '64', '-filelist', filelist, '-dir', downloads],
+            stdin=subprocess.DEVNULL)
+    (jobdir / 'provenance.json').write_text(json.dumps(provenance, indent=2))
     binaries = sorted(p for p in downloads.rglob('*') if p.is_file() and '.sdd' not in p.parts and binary_platform(p) == platform)
     if not binaries:
         raise RuntimeError('No matching x64 binaries downloaded for requested platform.')
+    binaries.sort(key=lambda p: (p.name.casefold(), str(p)))
     protoc = root / 'tools/protobuf-build/protoc'
     artifacts = jobdir / 'artifacts'
     artifacts.mkdir()
@@ -177,7 +186,71 @@ def pipeline(root, jobfile):
         provenance['artifacts'].append({'path': str(database.relative_to(jobdir)), 'binarySha256': sha256(binary),
                                         'sha256': sha256(database), 'bytes': database.stat().st_size})
         (jobdir / 'provenance.json').write_text(json.dumps(provenance, indent=2))
+        archive = artifacts / (database.name + '.7z')
+        # Same basename in multiple tracked directories shares one asset, retaining paths.
+        group_complete = index + 1 == len(binaries) or binaries[index + 1].name.casefold() != binary.name.casefold()
+        members = sorted(artifacts.rglob(database.name))
+        if group_complete:
+            compress(archive, members, base_dir=artifacts if len(members) > 1 else None)
+        provenance['artifacts'][-1]['archive'] = archive.name
+        (jobdir / 'provenance.json').write_text(json.dumps(provenance, indent=2))
         output.unlink()
+        if group_complete and project not in ('server', 'engine2', 'tier0'):
+            for member in members:
+                member.unlink()
+    common = []
+    for module in ('server', 'engine2', 'tier0'):
+        name = ('lib' + module + '.so' if platform == 'linux' else module + '.dll') + '.i64'
+        distro = 'linuxsteamrt64' if platform == 'linux' else 'win64'
+        canonical = artifacts / ('game/csgo/bin' if module == 'server' else 'game/bin') / distro / name
+        found = [canonical] if canonical.is_file() else list(artifacts.rglob(name))
+        if len(found) != 1:
+            if request.get('PublishRelease', True):
+                raise RuntimeError(f'Missing common bundle member: {name}')
+            break
+        common.append(found[0])
+    else:
+        compress(artifacts / ('common-' + platform + '.7z'), common)
+        for database in common:
+            database.unlink()
+    return provenance
+
+
+def tracked_patterns(tracked, platform, override=None):
+    # Keep upstream regex semantics, intersected with native binary extensions.
+    # Shared depots can contain Windows tools/DLLs as well as platform depots.
+    depots = ('2347770', '2347771', '2347779') if platform == 'windows' else ('2347770', '2347773', '2347779')
+    extension = r'.*\.(dll|exe)$' if platform == 'windows' else r'.*\.so$'
+    result = {}
+    for depot in depots:
+        patterns = [entry[6:] for entry in tracked.get(depot, []) if entry.startswith('regex:')]
+        if not patterns:
+            raise RuntimeError(f'No tracked regex for depot {depot}')
+        result[depot] = ['regex:^(?=' + extension + ')' +
+                         ('(?=.*(?:' + override + '))' if override else '') +
+                         '(?:' + '|'.join('(?:' + p + ')' for p in patterns) + ')']
+    return result
+
+
+def pipeline(root, jobfile):
+    job = json.loads(jobfile.read_text())
+    request = job['Request']
+    jobdir = jobfile.parent
+    sdk = sync(root, 'hl2sdk', 'https://github.com/alliedmodders/hl2sdk.git', 'cs2')
+    dumps = sync(root, 'CS2-Dumps', 'https://github.com/Swiftly-Tracker/CS2-Dumps.git', 'main')
+    platforms = ('windows', 'linux') if request['Platform'] == 'all' else (request['Platform'],)
+    provenance = {'dumpsCommit': request['DumpsCommit'], 'platforms': []}
+    for platform in platforms:
+        provenance['platforms'].append(analyze(root, job, jobdir / platform, platform, sdk, dumps))
+        (jobdir / 'provenance.json').write_text(json.dumps(provenance, indent=2))
+    if request.get('PublishRelease', True):
+        subject = git(dumps, 'show', '-s', '--format=%s', request['DumpsCommit'])
+        archives = sorted(jobdir.glob('*/artifacts/*.7z'))
+        receipt = publish(jobdir, request['DumpsCommit'], subject, archives)
+        # Receipt is durable before any payload is removed; logs and hashes remain.
+        (jobdir / 'release.json').write_text(json.dumps(receipt, indent=2))
+        cleanup_payload(jobdir)
+
 
 
 if __name__ == '__main__':

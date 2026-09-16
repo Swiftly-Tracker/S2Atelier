@@ -4,7 +4,7 @@ set -euo pipefail
 root=${S2A_ROOT:-/opt/s2atelier}
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y git curl unzip python3 cmake g++ make libicu76
+apt-get install -y git curl unzip python3 cmake g++ make libicu76 7zip
 mkdir -p "$root"/{sources,tools,jobs,ida/linux,ida/windows,app}
 sync_repo() {
   local name=$1 url=$2 branch=$3
