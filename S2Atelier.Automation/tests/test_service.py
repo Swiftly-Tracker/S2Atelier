@@ -91,6 +91,11 @@ if data['Request']['PublishRelease']:
         assert published['state'] == 'succeeded', published
         assert published['artifacts'][0].startswith('https://github.com/')
         assert json.loads(call('/jobs', publish)[1])['id'] == published_id
+        retry_request = {'dumpsCommit': 'f' * 40, 'platform': 'all'}
+        retry_id = json.loads(call('/jobs', retry_request)[1])['id']
+        assert wait_job(retry_id)['state'] == 'failed'
+        assert json.loads(call('/jobs', retry_request)[1])['id'] == retry_id
+        assert wait_job(retry_id)['state'] == 'failed'
         process.terminate(); process.wait(timeout=20)
         # Simulate a machine crash leaving one queued and one running job.
         stored = json.loads((root / 'jobs' / id / 'job.json').read_text())

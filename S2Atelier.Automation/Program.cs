@@ -112,6 +112,15 @@ namespace S2Atelier.Automation
                 {
                     var existing = jobs.Values.FirstOrDefault(j => j.Request == request && j.State is "queued" or "running" or "succeeded");
                     if (existing != null) return existing;
+                    var retry = jobs.Values.Where(j => j.Request == request && j.State == "failed")
+                        .OrderByDescending(j => j.CreatedAt).FirstOrDefault();
+                    if (retry != null)
+                    {
+                        retry = retry with { State = "queued", Error = null, FinishedAt = null, Files = null };
+                        Save(retry);
+                        signal.Release();
+                        return retry;
+                    }
                 }
                 if (jobs.Values.Count(j => j.State is "queued" or "running") >= 32) return null;
                 var job = new Job(Guid.NewGuid().ToString("N"), request, "queued", DateTimeOffset.UtcNow);
@@ -167,6 +176,28 @@ namespace S2Atelier.Automation
                 {
                     try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
                     // A killed docker client does not stop its container.
+                    try
+                    {
+                        using var listing = Process.Start(new ProcessStartInfo("docker")
+                        {
+                            ArgumentList = { "ps", "-aq", "--filter", "label=s2atelier.job=" + job.Id },
+                            RedirectStandardOutput = true, RedirectStandardError = true
+                        });
+                        if (listing != null)
+                        {
+                            var output = await listing.StandardOutput.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(15));
+                            await listing.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+                            foreach (var container in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            {
+                                using var removal = Process.Start(new ProcessStartInfo("docker")
+                                {
+                                    ArgumentList = { "rm", "-f", container }, RedirectStandardOutput = true, RedirectStandardError = true
+                                });
+                                if (removal != null) await removal.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+                            }
+                        }
+                    }
+                    catch (Exception cleanupError) { logger.LogWarning(cleanupError, "Parallel container cleanup failed"); }
                     foreach (var platform in new[] { "windows", "linux" })
                     {
                         try
