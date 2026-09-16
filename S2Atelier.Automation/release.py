@@ -32,6 +32,10 @@ def compress(archive, files, base_dir=None):
         raise RuntimeError('Duplicate filenames inside archive')
     # Flatten only the archive members, not their source paths.
     staging = archive.parent / (archive.name + '.members')
+    if staging.is_symlink():
+        raise RuntimeError('Refusing symlink archive staging directory')
+    if staging.exists():
+        shutil.rmtree(staging)
     staging.mkdir()
     try:
         for path, member in zip(files, members):
