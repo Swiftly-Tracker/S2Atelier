@@ -42,15 +42,18 @@ app.MapGet("/jobs/{id}/artifacts/{index:int}", (string id, int index, JobService
 {
     var job = jobs.Get(id);
     if (job?.State != "succeeded" || index < 0 || index >= job.Artifacts.Count) return Results.NotFound();
+    if (Uri.TryCreate(job.Artifacts[index], UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host == "github.com")
+        return Results.Redirect(uri.AbsoluteUri);
     var path = jobs.PathFor(id, job.Artifacts[index]);
+    if (!File.Exists(path)) return Results.NotFound();
     return Results.File(path, "application/octet-stream", Path.GetFileName(path), enableRangeProcessing: true);
 });
 app.Run();
 
 namespace S2Atelier.Automation
 {
-    public sealed record JobRequest(string DumpsCommit, string BinaryRegex, string Platform,
-        bool ImportSchema = true, uint? DepotId = null, string? ManifestId = null, uint? AppId = null)
+    public sealed record JobRequest(string DumpsCommit, string? BinaryRegex, string Platform,
+        bool ImportSchema = true, uint? DepotId = null, string? ManifestId = null, uint? AppId = null, bool PublishRelease = true)
     {
         // Retain legacy fields only to read historical job.json files after an upgrade.
         public string? Validate()
@@ -59,7 +62,10 @@ namespace S2Atelier.Automation
                 return "depotId, manifestId and appId are read from dumpsCommit; omit these fields.";
             if (string.IsNullOrEmpty(DumpsCommit) || !Regex.IsMatch(DumpsCommit, "\\A[0-9a-fA-F]{40}\\z"))
                 return "dumpsCommit must be a full 40-character Git commit SHA.";
-            if (Platform is not ("windows" or "linux")) return "platform must be windows or linux.";
+            if (Platform is not ("windows" or "linux" or "all")) return "platform must be windows, linux or all.";
+            if (PublishRelease && (Platform != "all" || BinaryRegex != null))
+                return "Published releases require platform all and no binaryRegex; use publishRelease false for diagnostic jobs.";
+            if (BinaryRegex == null) return null;
             if (string.IsNullOrWhiteSpace(BinaryRegex) || BinaryRegex.Length > 512 || BinaryRegex.Any(char.IsControl))
                 return "binaryRegex must contain 1–512 characters without control characters.";
             try { _ = new Regex(BinaryRegex, RegexOptions.NonBacktracking, TimeSpan.FromSeconds(1)); }
@@ -102,6 +108,11 @@ namespace S2Atelier.Automation
         {
             lock (gate)
             {
+                if (request.PublishRelease)
+                {
+                    var existing = jobs.Values.FirstOrDefault(j => j.Request == request && j.State is "queued" or "running" or "succeeded");
+                    if (existing != null) return existing;
+                }
                 if (jobs.Values.Count(j => j.State is "queued" or "running") >= 32) return null;
                 var job = new Job(Guid.NewGuid().ToString("N"), request, "queued", DateTimeOffset.UtcNow);
                 Directory.CreateDirectory(PathFor(job.Id, ""));
@@ -129,7 +140,7 @@ namespace S2Atelier.Automation
                 if (job == null) continue;
                 Save(job = job with { State = "running" });
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                timeout.CancelAfter(TimeSpan.FromHours(6));
+                timeout.CancelAfter(TimeSpan.FromHours(72));
                 using var process = new Process { StartInfo = new ProcessStartInfo("python3") { UseShellExecute = false } };
                 process.StartInfo.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "pipeline.py"));
                 process.StartInfo.ArgumentList.Add(root);
@@ -139,9 +150,17 @@ namespace S2Atelier.Automation
                     process.Start();
                     await process.WaitForExitAsync(timeout.Token);
                     if (process.ExitCode != 0) throw new Exception($"Pipeline exited {process.ExitCode}; inspect /jobs/{job.Id}/log.");
-                    var files = Directory.GetFiles(PathFor(job.Id, "artifacts"), "*.i64", SearchOption.AllDirectories)
-                        .Where(p => new FileInfo(p).Length > 0).Select(p => Path.GetRelativePath(PathFor(job.Id, ""), p)).ToList();
-                    if (files.Count == 0) throw new Exception("Pipeline produced no i64 artifacts.");
+                    List<string> files;
+                    if (job.Request.PublishRelease)
+                    {
+                        using var receipt = JsonDocument.Parse(File.ReadAllText(PathFor(job.Id, "release.json")));
+                        files = receipt.RootElement.GetProperty("assets").EnumerateArray()
+                            .Select(a => a.GetProperty("url").GetString()!).ToList();
+                    }
+                    else
+                        files = Directory.GetFiles(PathFor(job.Id, ""), "*.7z", SearchOption.AllDirectories)
+                            .Where(p => new FileInfo(p).Length > 0).Select(p => Path.GetRelativePath(PathFor(job.Id, ""), p)).ToList();
+                    if (files.Count == 0) throw new Exception("Pipeline produced no verified artifacts.");
                     Save(job with { State = "succeeded", FinishedAt = DateTimeOffset.UtcNow, Files = files });
                 }
                 catch (Exception e)

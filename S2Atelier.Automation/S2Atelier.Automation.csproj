@@ -4,5 +4,5 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup><Content Include="pipeline.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="pipeline.py;release.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

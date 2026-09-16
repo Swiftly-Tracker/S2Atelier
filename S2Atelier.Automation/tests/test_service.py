@@ -23,7 +23,9 @@ j = pathlib.Path(sys.argv[2]); data = json.loads(j.read_text())
 (j.parent / 'pipeline.log').write_text('test pipeline')
 if data['Request']['DumpsCommit'] == 'f' * 40: sys.exit(7)
 time.sleep(0.25)
-a = j.parent / 'artifacts'; a.mkdir(); (a / 'test.i64').write_bytes(b'test-database')
+a = j.parent / 'artifacts'; a.mkdir(); (a / 'test.dll.i64.7z').write_bytes(b'test-database')
+if data['Request']['PublishRelease']:
+    (j.parent / 'release.json').write_text(json.dumps({'assets':[{'url':'https://github.com/Swiftly-Tracker/CS2-IDA-Dumps/releases/download/test/test.dll.i64.7z'}]}))
 ''')
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
@@ -54,7 +56,7 @@ a = j.parent / 'artifacts'; a.mkdir(); (a / 'test.i64').write_bytes(b'test-datab
             if data['state'] in ('failed', 'succeeded'): return data
             time.sleep(.1)
         raise TimeoutError(id)
-    request = dict(dumpsCommit='a' * 40, binaryRegex=r'(^|/)test\.dll$', platform='windows')
+    request = dict(dumpsCommit='a' * 40, binaryRegex=r'(^|/)test\.dll$', platform='windows', publishRelease=False)
     process = start()
     try:
         assert call('/jobs', authenticated=False)[0] == 401
@@ -67,6 +69,7 @@ a = j.parent / 'artifacts'; a.mkdir(); (a / 'test.i64').write_bytes(b'test-datab
         assert call('/jobs', {**request, 'platform': '../linux'})[0] == 400
         assert call('/jobs', {**request, 'dumpsCommit': '--help'})[0] == 400
         assert call('/jobs', {k: v for k, v in request.items() if k != 'platform'})[0] == 400
+        assert call('/jobs', {**request, 'publishRelease': True})[0] == 400
         code, data = call('/jobs', {**request, 'platform': 'linux'})
         assert code == 202 and json.loads(data)['request']['platform'] == 'linux'
         status, data = call('/jobs', request)
@@ -79,6 +82,15 @@ a = j.parent / 'artifacts'; a.mkdir(); (a / 'test.i64').write_bytes(b'test-datab
         failed = json.loads(call('/jobs', {**request, 'dumpsCommit': 'f' * 40})[1])['id']
         assert wait_job(failed)['state'] == 'failed'
         assert call(f'/jobs/{failed}/artifacts/0')[0] == 404
+        publish = {'dumpsCommit': 'e' * 40, 'platform': 'all'}
+        code, data = call('/jobs', publish)
+        assert code == 202, data
+        published_id = json.loads(data)['id']
+        assert json.loads(call('/jobs', publish)[1])['id'] == published_id
+        published = wait_job(published_id)
+        assert published['state'] == 'succeeded', published
+        assert published['artifacts'][0].startswith('https://github.com/')
+        assert json.loads(call('/jobs', publish)[1])['id'] == published_id
         process.terminate(); process.wait(timeout=20)
         # Simulate a machine crash leaving one queued and one running job.
         stored = json.loads((root / 'jobs' / id / 'job.json').read_text())
