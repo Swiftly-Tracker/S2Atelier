@@ -20,6 +20,16 @@
 
 同一请求在 queued/running/succeeded 时重复提交会返回已有任务。失败后提交相同请求会续跑原任务，校验 binary/7z 哈希后复用已完成模块；输入 SDK、分析器或镜像变化时拒绝混用。重试可以复用同一 tag 的草稿附件，公开的 Release 内容不自动覆盖。哈希校验或上传失败不会公开草稿，也不会清理本地工作目录。
 
+## Windows 两阶段分析
+
+Windows 模块先用 Linux 原生 IDA 完成基础分析并保存 `.i64`，再用 Wine/Windows IDA 显式打开该数据库执行现有类型导入与命名。第二阶段显式指定 Schema 项目，避免 `.dll.i64` 导致项目名识别错误。两阶段顺序执行，使用独立的 IDA 状态目录；模块间仍按配置并行。Linux 模块保持原生完整流程。
+
+黑名单排除 `assetrename.dll`、`assetrename.exe`、`libassetrename.so` 和 `assetrename.so`，大小写不敏感。下载 regex、缓存输入和旧附件均执行过滤。升级前已完成并通过哈希校验的其他模块可以复用。
+
+Windows provenance 额外记录 Linux 分析器及镜像身份。新结果记录 `analysisMode=linux-base-wine-import`、`baseAnalysisSeconds` 和 `importSeconds`；耗时包含容器启动和数据库保存，不包含压缩。两边应部署相同版本的 IDA。
+
+运行 `python3 S2Atelier.Automation/tests/test_hybrid.py` 验证两阶段顺序、显式数据库交接、Schema 项目和黑名单过滤。
+
 ## Steam 授权 depot
 
 Workshop Tools depot 2347779 需要拥有权限的 Steam 账号。完整跟踪模式不会忽略该 depot 的下载失败。首次由 root 在 VM 交互登录并完成 Steam Guard：

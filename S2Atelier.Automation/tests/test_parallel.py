@@ -65,6 +65,21 @@ class ParallelTests(unittest.TestCase):
                 self.assertEqual(len(commands), 1)
                 self.assertEqual(commands[0][commands[0].index('test-image') + 1], 'liba.so')
                 self.assertEqual(third['archiveHashes'], first['archiveHashes'])
+                # An older completed run may contain a now-excluded cached module.
+                (downloads / 'libassetrename.so').write_bytes(b'excluded')
+                stale = jobdir / 'artifacts/libassetrename.so.i64.7z'
+                stale.write_bytes(b'old-archive')
+                legacy = json.loads((jobdir / 'provenance.json').read_text())
+                legacy.pop('excludedModules')
+                legacy['artifacts'].append({'path':'artifacts/libassetrename.so.i64'})
+                legacy['archiveHashes'][stale.name] = pipeline.sha256(stale)
+                (jobdir / 'provenance.json').write_text(json.dumps(legacy))
+                commands.clear()
+                migrated = pipeline.analyze(root, job, jobdir, 'linux', root/'sdk', root/'dumps')
+                self.assertEqual(commands, [])
+                self.assertFalse(stale.exists())
+                self.assertEqual(len(migrated['artifacts']), 2)
+                self.assertNotIn(stale.name, migrated['archiveHashes'])
 
     def test_worker_limit(self):
         for value in ('0', '17', 'invalid'):
