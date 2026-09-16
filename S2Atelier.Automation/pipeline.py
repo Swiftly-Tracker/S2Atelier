@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import traceback
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, CancelledError
 from collections import defaultdict
 from release import compress, publish, cleanup_payload, check_publish_access
@@ -122,6 +123,11 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
                   'downloaderSha256': sha256(root / 'tools/downloader/SteamDepotDownload.App'),
                   'containerImage': subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', 's2atelier-' + platform + ':local'], text=True).strip(),
                   'artifacts': []}
+    provenance['excludedModules'] = ['assetrename']
+    if platform == 'windows':
+        provenance['baseAnalysis'] = {
+            'analyzerSha256': sha256(root / 'tools/atelier/linux/S2Atelier'),
+            'containerImage': subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', 's2atelier-linux:local'], text=True).strip()}
     previous = []
     provenance_file = jobdir / 'provenance.json'
     if provenance_file.exists():
@@ -129,9 +135,11 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
         for key in ('dumpsCommit', 'hl2sdkCommit', 'analyzerSha256', 'downloaderSha256', 'containerImage'):
             if old.get(key) != provenance[key]:
                 raise RuntimeError(f'Cannot resume with changed {key}; use a new job for changed inputs.')
-        previous = old.get('artifacts', [])
+        if old.get('baseAnalysis') is not None and old['baseAnalysis'] != provenance.get('baseAnalysis'):
+            raise RuntimeError('Cannot resume with changed baseAnalysis; use a new job.')
+        previous = [a for a in old.get('artifacts', []) if not excluded_binary(a['path'])]
         provenance['artifacts'] = previous.copy()
-        if old.get('complete') and all((jobdir / 'artifacts' / name).is_file() and
+        if old.get('complete') and old.get('excludedModules') == provenance['excludedModules'] and all((jobdir / 'artifacts' / name).is_file() and
                 sha256(jobdir / 'artifacts' / name) == value for name, value in old['archiveHashes'].items()):
             return old
     atomic_json(provenance_file, provenance)
@@ -151,12 +159,14 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
              '-manifest', source['manifestId'], '-os', platform, '-osarch', '64', '-filelist', filelist, '-dir', downloads],
             stdin=subprocess.DEVNULL)
     atomic_json(provenance_file, provenance)
-    binaries = sorted(p for p in downloads.rglob('*') if p.is_file() and '.sdd' not in p.parts and binary_platform(p) == platform)
+    binaries = sorted(p for p in downloads.rglob('*') if p.is_file() and '.sdd' not in p.parts and not excluded_binary(p) and binary_platform(p) == platform)
     if not binaries:
         raise RuntimeError('No matching x64 binaries downloaded for requested platform.')
     binaries.sort(key=lambda p: (p.name.casefold(), str(p)))
     artifacts = jobdir / 'artifacts'
     artifacts.mkdir(exist_ok=True)
+    for stale in artifacts.glob('*.7z'):
+        if excluded_binary(stale): stale.unlink()
     groups = defaultdict(list)
     for binary in binaries:
         groups[binary.name.casefold()].append(binary)
@@ -257,35 +267,41 @@ def analyze_group(root, job, jobdir, platform, sdk, provenance, binaries, previo
         for suffix in ('.i64', '.i64.id0', '.i64.id1', '.i64.id2', '.i64.nam', '.i64.til', '.id0', '.id1', '.id2', '.nam', '.til'):
             Path(str(output) + suffix).unlink(missing_ok=True)
         shutil.copy2(binary, output)
+        database = Path(str(output) + '.i64')
+        timings = {}
+        if platform == 'windows':
+            started = time.monotonic()
+            run_analyzer(root, job, jobdir, sdk, 'linux', unique + '-base',
+                         provenance['baseAnalysis']['containerImage'], output, [])
+            timings['baseAnalysisSeconds'] = round(time.monotonic() - started, 3)
+            if not database.is_file() or database.stat().st_size == 0:
+                raise RuntimeError(f'Native analysis did not produce {database}')
         def mounted(path):
             return ('Z:' + str(path).replace('/', chr(92))) if platform == 'windows' else str(path)
-        args = [output.name, '--root', mounted(output.parent),
-                '--ida-path', 'Z:' + chr(92) + 'ida' if platform == 'windows' else '/ida', '--cores', '1',
-                '--patch-plt', '--name-convars', '--name-fnptr-tables', '--import-interfaces', '--hl2sdk', mounted(sdk)]
+        args = ['--patch-plt', '--name-convars', '--name-fnptr-tables',
+                '--import-interfaces', '--hl2sdk', mounted(sdk)]
         if any(generated.rglob('*.pb.h')):
             args += ['--import-protobufs', mounted(generated)]
         if job['Request']['ImportSchema']:
-            args += ['--import-schema', mounted(jobdir / 'dumps/dump/sdk.json')]
-        diagnostics = jobdir / 'diagnostics' / unique
-        diagnostics.mkdir(parents=True, exist_ok=True)
-        ida_state = jobdir / 'ida-state' / unique
-        shutil.copytree(root / 'state' / platform, ida_state, dirs_exist_ok=True)
-        command = ['docker', 'run', '--rm', '--init', '--name', f"s2a-{job['Id']}-{platform}-{unique}",
-                   '--label', 's2atelier.job=' + job['Id'], '--network', 'none',
-                   '--cpus', '2', '--memory', os.environ.get('S2A_ANALYSIS_MEMORY', '3g'), '--pids-limit', '256',
-                   '-e', 'S2ATELIER_CLANG_RESOURCE_DIR=' + mounted(Path('/clang')),
-                   '-v', f'{root}/tools/clang21:/clang:ro',
-                   '-v', f'{diagnostics}:' + ('/wine/drive_c/users/root/AppData/Local/Temp' if platform == 'windows' else '/tmp'),
-                   '-v', f'{jobdir}:{jobdir}', '-v', f'{sdk}:{sdk}:ro',
-                   '-v', f'{root}/ida/{platform}:/ida:ro', '-v', f'{ida_state}:/root/.idapro',
-                   '-v', f'{root}/tools/msvc:/msvc:ro', '-v', f'{root}/tools/atelier/{platform}:/atelier:ro',
-                   provenance['containerImage']]
-        run(command + args, stdin=subprocess.DEVNULL)
-        database = Path(str(output) + '.i64')
+            schema_path = jobdir / 'dumps/dump/sdk.json'
+            if platform == 'windows':
+                # Explicit .i64 input would otherwise infer "server.dll" as the project.
+                schema = json.loads(schema_path.read_text())
+                projects = {item['project'].casefold() for key in ('classes', 'enums') for item in schema[key]}
+                if project.casefold() in projects:
+                    args += ['--import-schema', mounted(schema_path), '--schema-project', project]
+            else:
+                args += ['--import-schema', mounted(schema_path)]
+        started = time.monotonic()
+        run_analyzer(root, job, jobdir, sdk, platform, unique + '-import',
+                     provenance['containerImage'], database if platform == 'windows' else output, args)
+        timings['importSeconds' if platform == 'windows' else 'analysisSeconds'] = round(time.monotonic() - started, 3)
+        print(f'Analysis timings {relative}: {json.dumps(timings)}', flush=True)
         if not database.is_file() or database.stat().st_size == 0:
             raise RuntimeError(f'IDA reported success but did not produce {database}')
         records.append({'path': str(database.relative_to(jobdir)), 'binarySha256': sha256(binary),
-                        'sha256': sha256(database), 'bytes': database.stat().st_size, 'archive': archive.name})
+                        'sha256': sha256(database), 'bytes': database.stat().st_size, 'archive': archive.name,
+                        'analysisMode': 'linux-base-wine-import' if platform == 'windows' else 'native', **timings})
         members.append(database)
         output.unlink()
     compress(archive, members, base_dir=artifacts if len(members) > 1 else None)
@@ -298,6 +314,32 @@ def analyze_group(root, job, jobdir, platform, sdk, provenance, binaries, previo
     return records
 
 
+def run_analyzer(root, job, jobdir, sdk, host, unique, image, input_path, extra_args):
+    def mounted(path):
+        return ('Z:' + str(path).replace('/', chr(92))) if host == 'windows' else str(path)
+    diagnostics = jobdir / 'diagnostics' / unique
+    diagnostics.mkdir(parents=True, exist_ok=True)
+    ida_state = jobdir / 'ida-state' / unique
+    shutil.copytree(root / 'state' / host, ida_state, dirs_exist_ok=True)
+    command = ['docker', 'run', '--rm', '--init', '--name', f"s2a-{job['Id']}-{host}-{unique}",
+               '--label', 's2atelier.job=' + job['Id'], '--network', 'none',
+               '--cpus', '2', '--memory', os.environ.get('S2A_ANALYSIS_MEMORY', '3g'), '--pids-limit', '256',
+               '-e', 'S2ATELIER_CLANG_RESOURCE_DIR=' + mounted(Path('/clang')),
+               '-v', f'{root}/tools/clang21:/clang:ro',
+               '-v', f'{diagnostics}:' + ('/wine/drive_c/users/root/AppData/Local/Temp' if host == 'windows' else '/tmp'),
+               '-v', f'{jobdir}:{jobdir}', '-v', f'{sdk}:{sdk}:ro',
+               '-v', f'{root}/ida/{host}:/ida:ro', '-v', f'{ida_state}:/root/.idapro',
+               '-v', f'{root}/tools/msvc:/msvc:ro', '-v', f'{root}/tools/atelier/{host}:/atelier:ro', image,
+               input_path.name, '--root', mounted(input_path.parent), '--ida-path', mounted(Path('/ida')), '--cores', '1']
+    run(command + extra_args, stdin=subprocess.DEVNULL)
+
+
+def excluded_binary(path):
+    name = str(path).replace(chr(92), '/').rsplit('/', 1)[-1].casefold()
+    return any(name == binary or name.startswith(binary + '.')
+               for binary in ('assetrename.dll', 'assetrename.exe', 'libassetrename.so', 'assetrename.so'))
+
+
 def tracked_patterns(tracked, platform, override=None):
     # Keep upstream regex semantics, intersected with native binary extensions.
     # Shared depots can contain Windows tools/DLLs as well as platform depots.
@@ -308,7 +350,7 @@ def tracked_patterns(tracked, platform, override=None):
         patterns = [entry[6:] for entry in tracked.get(depot, []) if entry.startswith('regex:')]
         if not patterns:
             raise RuntimeError(f'No tracked regex for depot {depot}')
-        result[depot] = ['regex:^(?=' + extension + ')' +
+        result[depot] = [r'regex:^(?!.*(?i:(?:^|[/\\])(?:lib)?assetrename\.(?:dll|exe|so))$)(?=' + extension + ')' +
                          ('(?=.*(?:' + override + '))' if override else '') +
                          '(?:' + '|'.join('(?:' + p + ')' for p in patterns) + ')']
     return result
