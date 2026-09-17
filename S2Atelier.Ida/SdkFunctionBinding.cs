@@ -125,9 +125,9 @@ internal static unsafe class SdkFunctionBinding
         return new(bound, skipped, conflicts);
     }
 
-    // Names a vtable function the SDK does not declare. The ownership comment records the name, and the
-    // prototype when this run bound it, so later runs update their own output but never user edits.
-    internal static bool TryNameSlotFunction(ulong address, string name, bool typeBound, Action<string> diagnostic)
+    // Names a function the SDK does not declare (vtable slots, constructors). The ownership comment records
+    // the name, and the prototype when this run bound it, so later runs update their own output but never user edits.
+    internal static bool TryNameFunction(ulong address, string name, bool typeBound, string source, Action<string> diagnostic)
     {
         string oldComment = ReadComment(address);
         var metadata = ReadOwnership(oldComment);
@@ -139,13 +139,13 @@ internal static unsafe class SdkFunctionBinding
         {
             if (!NameAvailable(wanted, address) || IdaNative.set_name(address, native, 0x01 | 0x40) == 0)
             {
-                diagnostic($"[schema] vfunc 0x{address:X}: slot function name {wanted} unavailable/rejected.");
+                diagnostic($"[schema] vfunc 0x{address:X}: function name {wanted} unavailable/rejected.");
                 return false;
             }
         }
         finally { Utf8.Free(native); }
         string? prototype = typeBound ? FingerprintAt(address) : metadata?.Prototype;
-        string comment = MergeOwnership(oldComment, new(SchemaVTableTypes.NameAt(address), prototype, "vtable slot"));
+        string comment = MergeOwnership(oldComment, new(SchemaVTableTypes.NameAt(address), prototype, source));
         byte* text = Utf8.Allocate(comment);
         try
         {
