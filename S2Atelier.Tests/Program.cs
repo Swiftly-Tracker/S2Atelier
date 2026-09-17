@@ -12,6 +12,7 @@ var tests = new (string Name, Action Run)[]
     ("flat sdk parse and selection", TestSelection),
     ("conflicting duplicate fails", TestConflict),
     ("golden header features", TestHeader),
+    ("aligned non-primary base", TestAlignedSecondaryBase),
     ("vtable ABI names", TestVTableNames),
     ("vtable table boundaries", TestVTableBoundaries),
     ("vtable bounded unknown slots", TestVTableUnknownSlots),
@@ -108,6 +109,32 @@ static void TestHeader()
     string linux = SchemaHeaderGenerator.Generate(server, SchemaTargetPlatform.LinuxItanium).Text;
     Contains(linux, "ELF x64 schema import requires 64-bit pointers");
     Contains(linux, "static_assert(sizeof(Shared_t) == 32)");
+}
+
+static void TestAlignedSecondaryBase()
+{
+    // Mirrors CPathQueryComponent: the second base has no schema alignment but holds a
+    // 16-byte-aligned member, so MSVC places it at 16 rather than directly after the first base.
+    using TempJson fixture = new("""
+    {
+      "classes": [
+        {"name":"Component","name_hash":1,"project":"server","size":8,"alignment":8,"is_struct":false,"has_chainer":false,
+         "base_classes_count":0,"base_classes":[],"fields_count":0,"fields":[]},
+        {"name":"QueryUtil","name_hash":2,"project":"server","size":32,"alignment":255,"is_struct":false,"has_chainer":false,
+         "base_classes_count":0,"base_classes":[],"fields_count":1,
+         "fields":[{"name":"m_position","name_hash":3,"kind":"ref","type":"VectorAligned","offset":16,"size":16,"alignment":16,"networked":false}]},
+        {"name":"QueryComponent","name_hash":4,"project":"server","size":64,"alignment":255,"is_struct":false,"has_chainer":false,
+         "base_classes_count":2,"base_classes":["Component","QueryUtil"],"fields_count":0,"fields":[]}
+      ],
+      "enums": []
+    }
+    """);
+    SchemaSelection selection = SchemaDatabase.Load(fixture.Path).Select("server", "server.dll")!;
+    string header = SchemaHeaderGenerator.Generate(selection, SchemaTargetPlatform.WindowsMsvc).Text;
+    Contains(header, "class alignas(16) QueryUtil {");
+    string nl = Environment.NewLine;
+    Contains(header, $"class alignas(16) QueryComponent : public Component, public QueryUtil {{{nl}public:{nl}" +
+        $"    unsigned char __pad_0[16];{nl}}};");
 }
 
 static void TestVTableNames()
