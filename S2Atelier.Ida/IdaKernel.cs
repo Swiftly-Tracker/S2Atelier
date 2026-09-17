@@ -265,6 +265,7 @@ public static unsafe class IdaKernel
         }
         finally
         {
+            SchemaImport.ResetParser();
             // Exceptions leave the pipeline incomplete, so partial changes are never persisted.
             IdaNative.close_database(save && completed ? (byte)1 : (byte)0);
         }
