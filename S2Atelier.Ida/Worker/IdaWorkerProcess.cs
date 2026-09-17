@@ -57,7 +57,8 @@ public static class IdaWorkerProcess
                 importSchemaPath, hl2SdkPath, schemaProject,
                 (fraction, address) =>
                     Send(new WireMessage { Kind = WireKind.Progress, Fraction = fraction, Address = address }),
-                importInterfaces);
+                importInterfaces,
+                stage => Send(new WireMessage { Kind = WireKind.Progress, Stage = stage }));
 
             Send(new WireMessage
             {

@@ -197,6 +197,12 @@ public static class Entrypoint
 
         AnsiConsole.Write(table);
 
+        // The table has no room for the reason, and --progress never logs it per item.
+        foreach (var item in results.Where(r => options.Progress && !r.Succeeded))
+        {
+            Console.Error.WriteLine($"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}");
+        }
+
         int failed = results.Count(r => !r.Succeeded);
         Console.WriteLine($"{results.Count - failed}/{results.Count} succeeded.");
 
@@ -245,51 +251,73 @@ public static class Entrypoint
         string schemaProject, bool importInterfaces, int cores)
     {
         IReadOnlyList<BatchItem> results = [];
-
-        AnsiConsole.Progress()
-            .Columns(
-                new TaskDescriptionColumn(),
-                new ProgressBarColumn(),
-                new PercentageColumn(),
-                new RemainingTimeColumn(),
-                new SpinnerColumn())
-            .Start(ctx =>
+        var previousLog = pool.Log;
+        var logLock = new object();
+        // Worker output must go through Spectre so the live display is redrawn below it.
+        pool.Log = line =>
+        {
+            lock (logLock)
             {
-                var tasks = new ProgressTask[cores];
-                for (int i = 0; i < cores; i++)
-                {
-                    tasks[i] = ctx.AddTask($"worker {i}: idle", autoStart: false, maxValue: 100);
-                }
+                AnsiConsole.WriteLine(line);
+            }
+        };
 
-                results = pool.RunBatch(
-                    paths,
-                    save,
-                    patchPlt,
-                    nameConVars,
-                    nameFnPtrTables,
-                    importProtobufsDir,
-                    importSchemaPath,
-                    hl2SdkPath,
-                    schemaProject,
-                    onStarted: (path, worker) =>
+        try
+        {
+            AnsiConsole.Progress()
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new RemainingTimeColumn(),
+                    new SpinnerColumn())
+                .Start(ctx =>
+                {
+                    var tasks = new ProgressTask[cores];
+                    var names = new string[cores];
+                    for (int i = 0; i < cores; i++)
                     {
-                        var task = tasks[worker];
-                        task.Description = Path.GetFileName(path);
-                        task.Value = 0;
-                        if (!task.IsStarted)
+                        tasks[i] = ctx.AddTask($"worker {i}: idle", autoStart: false, maxValue: 100);
+                        names[i] = string.Empty;
+                    }
+
+                    results = pool.RunBatch(
+                        paths,
+                        save,
+                        patchPlt,
+                        nameConVars,
+                        nameFnPtrTables,
+                        importProtobufsDir,
+                        importSchemaPath,
+                        hl2SdkPath,
+                        schemaProject,
+                        onStarted: (path, worker) =>
                         {
-                            task.StartTask();
-                        }
-                    },
-                    onFinished: (worker, item) =>
-                    {
-                        string name = Path.GetFileName(item.Path);
-                        tasks[worker].Value = 100;
-                        tasks[worker].Description = item.Succeeded ? $"{name} [green]done[/]" : $"{name} [red]failed[/]";
-                    },
-                    onProgress: (worker, fraction, _) => tasks[worker].Value = fraction * 100,
-                    importInterfaces: importInterfaces);
-            });
+                            var task = tasks[worker];
+                            names[worker] = Markup.Escape(Path.GetFileName(path));
+                            task.Description = names[worker];
+                            task.Value = 0;
+                            if (!task.IsStarted)
+                            {
+                                task.StartTask();
+                            }
+                        },
+                        onFinished: (worker, item) =>
+                        {
+                            string name = Markup.Escape(Path.GetFileName(item.Path));
+                            tasks[worker].Value = 100;
+                            tasks[worker].Description = item.Succeeded ? $"{name} [green]done[/]" : $"{name} [red]failed[/]";
+                        },
+                        onProgress: (worker, fraction, _) => tasks[worker].Value = fraction * 100,
+                        importInterfaces: importInterfaces,
+                        onStage: (worker, stage) =>
+                            tasks[worker].Description = $"{names[worker]} [grey]{Markup.Escape(stage)}[/]");
+                });
+        }
+        finally
+        {
+            pool.Log = previousLog;
+        }
 
         return results;
     }

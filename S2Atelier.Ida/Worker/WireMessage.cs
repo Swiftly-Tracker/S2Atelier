@@ -22,6 +22,7 @@ internal sealed class WireMessage
     public string? Sdk { get; init; }
 
     public double Fraction { get; init; }
+    public string? Stage { get; init; }
     public ulong Address { get; init; }
 
     public int Functions { get; init; }
