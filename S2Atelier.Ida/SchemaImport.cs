@@ -396,6 +396,11 @@ public static unsafe class SchemaImport
                 selection.Classes.ContainsKey(descriptor.ClassName)) descriptors.Add(descriptor);
         }
         foreach (var saved in existing.Values) boundaries.Add(saved.Address);
+        // MSVC can give every vftable of a class the same unqualified symbol. Without a readable
+        // locator such a table's subobject is unknown; assuming offset 0 makes it a second primary table.
+        var ambiguousUnqualified = descriptors.Where(x => x.Abi == VTableAbi.Msvc && x.SecondaryBaseName == null)
+            .GroupBy(x => x.ClassName, StringComparer.Ordinal).Where(x => x.Count() > 1)
+            .Select(x => x.Key).ToHashSet(StringComparer.Ordinal);
         foreach (VTableDescriptor descriptor in descriptors.OrderBy(x => x.Address))
         {
             // Symbols supply a hard stopping boundary, not proof that every byte before it is a slot.
@@ -411,9 +416,11 @@ public static unsafe class SchemaImport
             foreach (VTableSlice slice in slices.Where(x => x.Functions.Count > 0))
             {
                 ulong? offset = descriptor.Abi == VTableAbi.Itanium ? checked((ulong)-slice.OffsetToTop)
-                    : ReadMsvcObjectOffset(slice.AddressPoint) ?? (descriptor.SecondaryBaseName == null ? 0UL : null);
+                    : ReadMsvcObjectOffset(slice.AddressPoint) ??
+                      (descriptor.SecondaryBaseName == null && !ambiguousUnqualified.Contains(descriptor.ClassName) ? 0UL : null);
                 string? owner = descriptor.Abi == VTableAbi.Msvc
-                    ? descriptor.SecondaryBaseName ?? descriptor.ClassName
+                    // An unqualified symbol only names the complete class for its primary table.
+                    ? descriptor.SecondaryBaseName ?? (offset == 0 ? descriptor.ClassName : null)
                     : ResolveBaseAtOffset(descriptor.ClassName, slice.OffsetToTop, selection);
                 if (owner != null && !selection.Classes.ContainsKey(owner)) owner = null;
                 found.TryAdd(slice.AddressPoint, new(descriptor.ClassName, slice.AddressPoint, offset,
@@ -460,10 +467,17 @@ public static unsafe class SchemaImport
         if (locator == 0 || locator > ulong.MaxValue - 23 || IdaNative.is_mapped(locator + 23) == 0 ||
             IdaNative.is_mapped(locator) == 0 || IdaNative.get_dword(locator) != 1) return null;
         // PE x64 RTTICompleteObjectLocator uses image-relative references; validate its self RVA.
+        // The image base itself (the PE header) is usually not loaded, so validate the referenced
+        // type descriptor and class hierarchy instead of requiring the base to be mapped.
         uint self = IdaNative.get_dword(locator + 20);
-        if (self > locator || IdaNative.is_mapped(locator - self) == 0) return null;
+        if (self > locator) return null;
+        ulong imageBase = locator - self;
         uint type = IdaNative.get_dword(locator + 12), hierarchy = IdaNative.get_dword(locator + 16);
-        if (IdaNative.is_mapped(locator - self + type) == 0 || IdaNative.is_mapped(locator - self + hierarchy) == 0)
+        ulong typeName = imageBase + type + 16;
+        if (type == 0 || hierarchy == 0 || IdaNative.is_mapped(typeName + 3) == 0 ||
+            IdaNative.is_mapped(imageBase + hierarchy + 15) == 0 ||
+            IdaNative.get_byte(typeName) != '.' || IdaNative.get_byte(typeName + 1) != '?' ||
+            IdaNative.get_byte(typeName + 2) != 'A')
             return null;
         return IdaNative.get_dword(locator + 4);
     }
