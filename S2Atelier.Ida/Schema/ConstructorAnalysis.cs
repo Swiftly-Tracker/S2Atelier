@@ -5,7 +5,7 @@ namespace S2Atelier.Ida.Schema;
 /// <param name="Classes">Classes of the stored vtables, in instruction order.</param>
 /// <param name="CallBeforeFirstWrite">A call precedes the first vtable store.</param>
 /// <param name="FirstCall">Target of the first direct call before the first store, if any.</param>
-/// <param name="TableReferenced">A vtable slot or a data pointer references the function, or a vtable slot calls it.</param>
+/// <param name="TableReferenced">A vtable slot or a data pointer references the function itself.</param>
 public sealed record VptrWriter(
     ulong Function,
     IReadOnlyList<string> Classes,
@@ -18,8 +18,9 @@ public static class ConstructorAnalysis
     /// <summary>
     /// Selects each class's constructor. MSVC constructors call their base constructor, which stores the
     /// base vtable, before storing their own, so the class is the last vtable stored. Destructors store in
-    /// the opposite order and are reached from vtables (deleting destructors), so any table reference rules
-    /// a function out. A class with several matches (overloads) is left out rather than guessed.
+    /// the opposite order, before any call, and the ones that do not are reached through a vtable slot, so a
+    /// table reference rules a function out. A class with several matches (overloads, or several functions
+    /// that construct it inline) is left out rather than guessed.
     /// </summary>
     public static IReadOnlyDictionary<string, ulong> SelectConstructors(IReadOnlyCollection<VptrWriter> writers)
     {
