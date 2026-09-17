@@ -98,7 +98,10 @@ static void TestHeader()
     Contains(header, "#include \"tier1/KeyValues.h\"");
     Contains(header, "#include \"shareddefs.h\"");
     Contains(header, "struct alignas(8) __s2_opaque_MysteryAtomic_5_8_8");
-    Contains(header, "GOOGLE_PROTOBUF_INCLUDED_network_5fconnection_2eproto");
+    Contains(header, "#if __has_include(\"netmessages.pb.h\")");
+    Contains(header, "#include \"netmessages.pb.h\"");
+    Contains(header, "#if __has_include(\"gameevents.pb.h\")");
+    Contains(header, "#include \"gameevents.pb.h\"");
     True(!header.Contains("#pragma once", StringComparison.Ordinal));
     Contains(header, "static_assert(offsetof(Base, __vftable) == 0)");
     Contains(header, "static_assert(sizeof(Derived) == 40)");

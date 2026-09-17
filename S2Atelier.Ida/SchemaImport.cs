@@ -73,10 +73,6 @@ public static unsafe class SchemaImport
         {
             Directory.CreateDirectory(tempDirectory);
             File.WriteAllText(tempHeader, header.Text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            // Current HL2SDK snapshots include this generated protobuf header unconditionally,
-            // although schema layout only needs the replacement enum emitted by our preamble.
-            File.WriteAllText(Path.Combine(tempDirectory, "network_connection.pb.h"),
-                "#pragma once\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: false, tempDirectory);
             int preflightErrors = ParseHeader(tempHeader, testOnly: true, printDiagnostics: true);
             if (preflightErrors != 0)
@@ -226,6 +222,9 @@ public static unsafe class SchemaImport
         var arguments = new List<string>
         {
             "-x", "c++", "-std=c++17", "-U__tuple", "-frtti", "-ferror-limit=100", "-Wno-c++11-narrowing", "-Wno-invalid-offsetof",
+            // Layout assertions name private SDK members. "#define private public" cannot reach headers
+            // that the leading includes already pulled in (e.g. entityidentity.h via eiface.h).
+            "-fno-access-control",
         };
         if (skipLayoutAssertions)
         {
@@ -253,6 +252,14 @@ public static unsafe class SchemaImport
             ]);
         }
         if (generatedIncludeDirectory != null) arguments.Add("-I" + QuoteArgument(generatedIncludeDirectory));
+        // eiface.h/igameevents.h declare interface methods that pass CNetMessagePB<T> (see
+        // netmessage.h) for a couple of protobuf message types, by value of the template's base.
+        // hl2sdk ships only the .proto source for those, not compiled headers, so without this
+        // T is incomplete at the point those declarations need it. Compile the small, fixed set
+        // this SDK actually references with the SDK's own protoc (it patches codegen to drop
+        // "final" from message classes - CNetMessagePB<T> inherits T, which a stock protoc's
+        // "final" would make illegal - so a generic protoc release is not a substitute).
+        arguments.Add("-I" + QuoteArgument(NetworkProtobufHeaders(hl2SdkPath)));
         foreach (string directory in includeDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             arguments.Add("-I" + QuoteArgument(directory));
@@ -293,6 +300,110 @@ public static unsafe class SchemaImport
             Utf8.Free(nativeArgv);
             Utf8.Free(parser);
         }
+    }
+
+    // (source .proto path relative to hl2SdkPath, in dependency order so a single protoc
+    // invocation can compile all of them - protoc only emits output for files listed explicitly).
+    private static readonly string[] NetworkProtoSources =
+    [
+        Path.Combine("common", "networkbasetypes.proto"),
+        Path.Combine("common", "valveextensions.proto"),
+        Path.Combine("common", "network_connection.proto"),
+        Path.Combine("common", "source2_steam_stats.proto"),
+        Path.Combine("common", "netmessages.proto"),
+        Path.Combine("game", "shared", "gameevents.proto"),
+    ];
+
+    // One compile per hl2SdkPath for the process lifetime: an IDA worker analyzes many binaries
+    // against the same SDK, and protoc's own startup cost dwarfs compiling these six small files.
+    private static readonly Dictionary<string, string?> NetworkProtobufDirectoryCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object NetworkProtobufDirectoryLock = new();
+
+    private static string NetworkProtobufHeaders(string hl2SdkPath)
+    {
+        lock (NetworkProtobufDirectoryLock)
+        {
+            if (NetworkProtobufDirectoryCache.TryGetValue(hl2SdkPath, out string? cached))
+            {
+                return cached ?? NetworkProtobufFallbackStub();
+            }
+            string? compiled = CompileNetworkProtobufHeaders(hl2SdkPath);
+            NetworkProtobufDirectoryCache[hl2SdkPath] = compiled;
+            return compiled ?? NetworkProtobufFallbackStub();
+        }
+    }
+
+    private static string? CompileNetworkProtobufHeaders(string hl2SdkPath)
+    {
+        string protoc = Path.Combine(hl2SdkPath, "devtools", "bin",
+            OperatingSystem.IsWindows() ? "protoc.exe" : Path.Combine("linux", "protoc"));
+        string[] sources = NetworkProtoSources.Select(x => Path.Combine(hl2SdkPath, x)).ToArray();
+        if (!File.Exists(protoc) || sources.Any(x => !File.Exists(x)))
+        {
+            return null;
+        }
+
+        string directory = Path.Combine(Path.GetTempPath(), "s2atelier-sdk-protos-" +
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(hl2SdkPath)))[..16]);
+        string marker = Path.Combine(directory, "netmessages.pb.h");
+        // Content is fully determined by hl2SdkPath's own checked-in .proto files; a prior
+        // compile in this or an earlier process is already correct, and workers share this cache.
+        if (File.Exists(marker))
+        {
+            return directory;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var info = new ProcessStartInfo(protoc)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            info.ArgumentList.Add("-I" + Path.Combine(hl2SdkPath, "common"));
+            info.ArgumentList.Add("-I" + Path.Combine(hl2SdkPath, "game", "shared"));
+            info.ArgumentList.Add("-I" + Path.Combine(hl2SdkPath, "thirdparty", "protobuf-3.21.8", "src"));
+            info.ArgumentList.Add("--cpp_out=" + directory);
+            foreach (string source in sources) info.ArgumentList.Add(source);
+
+            using Process? process = Process.Start(info);
+            if (process == null)
+            {
+                return null;
+            }
+            process.WaitForExit();
+            return process.ExitCode == 0 && File.Exists(marker) ? directory : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? _fallbackStubDirectory;
+
+    // hl2sdk checkouts without devtools/bin (or an unexpected .proto layout) fall back to a stub
+    // that only satisfies the hard, unconditional "#include" in eiface.h/inetchannel.h - the same
+    // gap this used to paper over before real headers were available, minus the accurate enum.
+    private static string NetworkProtobufFallbackStub()
+    {
+        if (_fallbackStubDirectory != null)
+        {
+            return _fallbackStubDirectory;
+        }
+        string directory = Path.Combine(Path.GetTempPath(), "s2atelier-network-proto-stub");
+        Directory.CreateDirectory(directory);
+        string stub = Path.Combine(directory, "network_connection.pb.h");
+        if (!File.Exists(stub))
+        {
+            File.WriteAllText(stub, "#pragma once\ntypedef int ENetworkDisconnectionReason;\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        _fallbackStubDirectory = directory;
+        return directory;
     }
 
     internal static int ParseHeader(string path, bool testOnly, bool printDiagnostics, void* targetTil = null)
