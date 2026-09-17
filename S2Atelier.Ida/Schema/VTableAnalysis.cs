@@ -363,8 +363,16 @@ public static partial class VTableTypeBinder
         return new(completed, bound, unknown, conflicts);
     }
 
+    public static string FunctionName(string owner, ulong offset) => $"{owner}::vfn_{offset:X}";
+
     public static string SlotName(string? name, int index)
     {
+        // Functions named by FunctionName keep their slot name without the owner.
+        int separator = name?.LastIndexOf("::", StringComparison.Ordinal) ?? -1;
+        if (separator >= 0 && name![(separator + 2)..].StartsWith("vfn_", StringComparison.Ordinal))
+        {
+            return name[(separator + 2)..];
+        }
         string cleaned = InvalidName().Replace(name ?? "", "_").Trim('_');
         if (cleaned.Length > 96) cleaned = cleaned[..96];
         return cleaned.Length == 0 ? $"slot_{index}" : $"vfn_{cleaned}_{index}";
@@ -377,9 +385,10 @@ public static partial class VTableTypeBinder
 public interface IVirtualFunctionTypeEditor
 {
     bool TryBindThis(ulong address, string owner);
+    bool TryName(ulong address, string name);
 }
 
-public sealed record VTableBindingSummary(int Bound, int Skipped, int Conflicts);
+public sealed record VTableBindingSummary(int Bound, int Skipped, int Conflicts, int Named = 0);
 
 public static class VTableFunctionBinder
 {
@@ -389,10 +398,23 @@ public static class VTableFunctionBinder
         IReadOnlySet<ulong> unresolvedThis,
         IReadOnlyDictionary<string, SchemaClass> classes,
         IVirtualFunctionTypeEditor editor,
-        Action<ulong, IReadOnlyCollection<string>>? onConflict = null)
+        Action<ulong, IReadOnlyCollection<string>>? onConflict = null,
+        IReadOnlyList<SchemaVTable>? tables = null)
         where TCollection : IReadOnlyCollection<string>
     {
-        int bound = 0;
+        var slots = new Dictionary<ulong, List<(string ClassName, string? ThisType, ulong Offset)>>();
+        foreach (SchemaVTable table in tables ?? [])
+        {
+            for (int index = 0; index < table.Functions.Count; index++)
+            {
+                if (!slots.TryGetValue(table.Functions[index], out var entries))
+                {
+                    slots.Add(table.Functions[index], entries = []);
+                }
+                entries.Add((table.ClassName, table.ThisType, (ulong)index * 8));
+            }
+        }
+        int bound = 0, named = 0;
         int skipped = unresolvedThis.Count(x => !functionOwners.ContainsKey(x));
         int conflicts = 0;
         foreach ((ulong address, TCollection owners) in functionOwners.OrderBy(x => x.Key))
@@ -417,8 +439,31 @@ public static class VTableFunctionBinder
             {
                 skipped++;
             }
+            if (slots.TryGetValue(address, out var entries) && SlotOffset(entries, owner) is ulong offset &&
+                editor.TryName(address, VTableTypeBinder.FunctionName(SlotScope(entries, owner), offset)))
+            {
+                named++;
+            }
         }
-        return new VTableBindingSummary(bound, skipped, conflicts);
+        return new VTableBindingSummary(bound, skipped, conflicts, named);
+    }
+
+    // A function shared by several tables usually keeps one slot offset; the owner's own tables decide
+    // otherwise, and an offset that still differs between them leaves the function unnamed.
+    private static ulong? SlotOffset(List<(string ClassName, string? ThisType, ulong Offset)> entries, string owner)
+    {
+        var own = entries.Where(x => x.ThisType == owner).Select(x => x.Offset).Distinct().ToArray();
+        var offsets = own.Length != 0 ? own : entries.Select(x => x.Offset).Distinct().ToArray();
+        return offsets.Length == 1 ? offsets[0] : null;
+    }
+
+    // Adjustor thunks live only in one class's secondary table for a base, and every class has its own;
+    // the class scopes them so they do not all collide under the base's name.
+    private static string SlotScope(List<(string ClassName, string? ThisType, ulong Offset)> entries, string owner)
+    {
+        string[] classes = entries.Select(x => x.ClassName).Distinct(StringComparer.Ordinal).ToArray();
+        return classes.Length == 1 && entries.All(x => x.ThisType != x.ClassName) && classes[0] != owner
+            ? $"{classes[0]}::{owner}" : owner;
     }
 }
 

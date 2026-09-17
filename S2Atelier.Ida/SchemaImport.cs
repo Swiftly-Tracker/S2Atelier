@@ -126,7 +126,7 @@ public static unsafe class SchemaImport
                 UnresolvedThisAddresses = scan.UnresolvedThisAddresses.Except(sdkAddresses).ToHashSet(),
             }, selection);
             var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
-                sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts);
+                sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts, fallback.Named);
             Stage("fallback function binding");
             VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine, slots));
             Stage("vtable type binding");
@@ -134,7 +134,7 @@ public static unsafe class SchemaImport
                 $"[schema] {Path.GetFileName(binaryPath)}: project={selection.Project}, types={importedTypes}, " +
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
                 $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
-                $"conflicts={binding.Conflicts}, clang-errors={clangErrors}" +
+                $"conflicts={binding.Conflicts}, slot-names={binding.Named}, clang-errors={clangErrors}" +
                 (clangErrors == 0 ? "." : " (ignored; valid declarations were imported)."));
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
                 binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
@@ -747,7 +747,8 @@ public static unsafe class SchemaImport
         VTableBindingSummary result = VTableFunctionBinder.Bind(scan.FunctionOwners, scan.PureCallAddresses,
             scan.UnresolvedThisAddresses, selection.Classes, new IdaFunctionTypeEditor(diagnostics),
             (address, owners) => diagnostics.Write(
-                $"[schema] vfunc 0x{address:X}: unrelated vtables disagree on this type ({string.Join(", ", owners.Order())}); skipped."));
+                $"[schema] vfunc 0x{address:X}: unrelated vtables disagree on this type ({string.Join(", ", owners.Order())}); skipped."),
+            scan.Tables);
         diagnostics.Finish();
         return result;
     }
@@ -913,7 +914,13 @@ public static unsafe class SchemaImport
 
     private sealed class IdaFunctionTypeEditor(LimitedDiagnostics diagnostics) : IVirtualFunctionTypeEditor
     {
-        public bool TryBindThis(ulong address, string owner) => TryBindThisParameter(address, owner, diagnostics);
+        private readonly HashSet<ulong> _typed = [];
+
+        public bool TryBindThis(ulong address, string owner)
+            => TryBindThisParameter(address, owner, diagnostics) && _typed.Add(address);
+
+        public bool TryName(ulong address, string name)
+            => SdkFunctionBinding.TryNameSlotFunction(address, name, _typed.Contains(address), diagnostics.Write);
     }
 
     private sealed class LimitedDiagnostics(int limit)
