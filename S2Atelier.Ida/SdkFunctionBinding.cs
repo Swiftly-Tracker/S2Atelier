@@ -125,6 +125,37 @@ internal static unsafe class SdkFunctionBinding
         return new(bound, skipped, conflicts);
     }
 
+    // Names a vtable function the SDK does not declare. The ownership comment records the name, and the
+    // prototype when this run bound it, so later runs update their own output but never user edits.
+    internal static bool TryNameSlotFunction(ulong address, string name, bool typeBound, Action<string> diagnostic)
+    {
+        string oldComment = ReadComment(address);
+        var metadata = ReadOwnership(oldComment);
+        string currentName = SchemaVTableTypes.NameAt(address);
+        if (!CanUpdateName(currentName, metadata)) return false;
+        string wanted = NameAvailable(name, address) ? name : $"{name}_ea_{address:X}";
+        byte* native = Utf8.Allocate(wanted);
+        try
+        {
+            if (!NameAvailable(wanted, address) || IdaNative.set_name(address, native, 0x01 | 0x40) == 0)
+            {
+                diagnostic($"[schema] vfunc 0x{address:X}: slot function name {wanted} unavailable/rejected.");
+                return false;
+            }
+        }
+        finally { Utf8.Free(native); }
+        string? prototype = typeBound ? FingerprintAt(address) : metadata?.Prototype;
+        string comment = MergeOwnership(oldComment, new(SchemaVTableTypes.NameAt(address), prototype, "vtable slot"));
+        byte* text = Utf8.Allocate(comment);
+        try
+        {
+            if (IdaNative.set_cmt(address, text, 1) == 0)
+                diagnostic($"[schema] vfunc 0x{address:X}: ownership comment could not be saved.");
+        }
+        finally { Utf8.Free(text); }
+        return true;
+    }
+
     internal static string? SelectImplementationOwner(IEnumerable<string?> candidates,
         Func<string, string, bool> isZeroOffsetBase)
     {

@@ -216,6 +216,9 @@ static void TestVTableTypes()
     Equal("ns::Derived_vtbl,ns::Derived_0010_vtbl,ns::Derived_0010_ea_1200_vtbl,ns::Derived_ea_1300_vtbl", string.Join(',', names));
     Equal("slot_2", VTableTypeBinder.SlotName(null, 2));
     Equal("vfn_Derived_Foo_0", VTableTypeBinder.SlotName("Derived::Foo", 0));
+    Equal("ns::Derived::vfn_C08", VTableTypeBinder.FunctionName("ns::Derived", 0xC08));
+    Equal("vfn_C08", VTableTypeBinder.SlotName("ns::Derived::vfn_C08", 385));
+    Equal("vfn_sub_1000_3", VTableTypeBinder.SlotName("sub_1000", 3));
     var editor = new FakeVTableTypeEditor();
     var result = VTableTypeBinder.Bind(tables, editor);
     Equal(new VTableTypeSummary(3, 2, 1, 1), result);
@@ -503,13 +506,40 @@ static void TestFunctionBindingStatistics()
         [40] = new(StringComparer.Ordinal) { "Base" },
         [20] = new(StringComparer.Ordinal) { "Base", "Unrelated" },
     };
+    SchemaVTable[] tables =
+    [
+        new("Base", 0x1000, 0, "Base", [], [10, 30, 40]),
+        new("Derived", 0x2000, 0, "Derived", [], [10, 30, 40]),
+        // The same function in another class's secondary table sits at a different offset.
+        new("Other", 0x3000, 8, "Base", ["Base"], [30, 10]),
+    ];
     var editor = new FakeFunctionTypeEditor(new HashSet<ulong> { 30 });
     VTableBindingSummary result = VTableFunctionBinder.Bind(owners,
-        new HashSet<ulong> { 40 }, new HashSet<ulong>(), selection.Classes, editor);
+        new HashSet<ulong> { 40 }, new HashSet<ulong>(), selection.Classes, editor, tables: tables);
     Equal(1, result.Bound);
     Equal(2, result.Skipped);
     Equal(1, result.Conflicts);
+    Equal(0, result.Named);
     Equal("10:Base,30:Base", string.Join(',', editor.Attempts.Select(x => $"{x.Address}:{x.Owner}")));
+    Equal("", string.Join(',', editor.Names.Select(x => $"{x.Address}:{x.Name}")));
+
+    SchemaVTable[] consistent =
+    [
+        new("Base", 0x1000, 0, "Base", [], [10, 30, 40]),
+        new("Derived", 0x2000, 0, "Derived", [], [10, 30, 40]),
+    ];
+    editor = new FakeFunctionTypeEditor(new HashSet<ulong> { 30 });
+    result = VTableFunctionBinder.Bind(owners,
+        new HashSet<ulong> { 40 }, new HashSet<ulong>(), selection.Classes, editor, tables: consistent);
+    Equal(2, result.Named);
+    Equal("10:Base::vfn_0,30:Base::vfn_8", string.Join(',', editor.Names.Select(x => $"{x.Address}:{x.Name}")));
+
+    // A thunk referenced only by one class's secondary table is scoped by that class.
+    var thunkOwners = new Dictionary<ulong, HashSet<string>> { [50] = new(StringComparer.Ordinal) { "Base" } };
+    editor = new FakeFunctionTypeEditor(new HashSet<ulong>());
+    result = VTableFunctionBinder.Bind(thunkOwners, new HashSet<ulong>(), new HashSet<ulong>(), selection.Classes,
+        editor, tables: [new SchemaVTable("Derived", 0x4000, 16, "Base", ["Base"], [0, 50])]);
+    Equal("50:Derived::Base::vfn_8", string.Join(',', editor.Names.Select(x => $"{x.Address}:{x.Name}")));
 }
 
 static void TestValveInterfaceCatalog()
@@ -1138,10 +1168,18 @@ sealed class FakeFunctionTypeEditor(IReadOnlySet<ulong> failures) : IVirtualFunc
 {
     public List<(ulong Address, string Owner)> Attempts { get; } = [];
 
+    public List<(ulong Address, string Name)> Names { get; } = [];
+
     public bool TryBindThis(ulong address, string owner)
     {
         Attempts.Add((address, owner));
         return !failures.Contains(address);
+    }
+
+    public bool TryName(ulong address, string name)
+    {
+        Names.Add((address, name));
+        return true;
     }
 }
 
