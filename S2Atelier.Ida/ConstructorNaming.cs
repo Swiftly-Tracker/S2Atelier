@@ -158,8 +158,9 @@ internal static unsafe partial class ConstructorNaming
         }
         if (written.Count == 0) return null;
 
+        // Only the function's own appearance in a table rules it out: a constructor can well be called
+        // from a virtual method (e.g. a pawn's CreateServices slot constructs its service objects).
         bool referenced = slotTargets.Contains(function) ||
-            Xrefs.CodeTo(function).Any(caller => slotTargets.Contains(FunctionStart(caller))) ||
             // Unwind and EH tables hold 32-bit RVAs; a full pointer comes from a table such as an unnamed vtable.
             Xrefs.DataTo(function).Any(source => IdaNative.get_qword(source) == function);
         return new VptrWriter(function, written, callBefore, firstCall, referenced);
