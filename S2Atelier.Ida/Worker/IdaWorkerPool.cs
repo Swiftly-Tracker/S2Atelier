@@ -24,6 +24,10 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
 {
     private readonly List<Worker> _workers = [];
 
+    // Receives worker diagnostics. A live console display must replace this: raw console
+    // writes from the worker threads land in the middle of the display's redraws.
+    public Action<string> Log { get; set; } = Console.Error.WriteLine;
+
     public IReadOnlyList<BatchItem> RunBatch(
         IReadOnlyList<string> paths,
         bool save,
@@ -51,7 +55,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
         Action<string, int>? onStarted = null,
         Action<int, BatchItem>? onFinished = null,
         Action<int, double, ulong>? onProgress = null,
-        bool importInterfaces = false)
+        bool importInterfaces = false,
+        Action<int, string>? onStage = null)
     {
         if (paths.Count == 0)
         {
@@ -66,7 +71,7 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
 
         for (int i = 0; i < workerCount; i++)
         {
-            var worker = new Worker(i, idaPath, sdk);
+            var worker = new Worker(i, idaPath, sdk, line => Log(line));
             _workers.Add(worker);
 
             var thread = new Thread(() =>
@@ -76,7 +81,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     onStarted?.Invoke(paths[index], worker.Index);
                     var item = worker.Run(paths[index], save, patchPlt, nameConVars, nameFnPtrTables,
                         importProtobufsDir, importSchemaPath, hl2SdkPath, schemaProject, importInterfaces,
-                        (fraction, address) => onProgress?.Invoke(worker.Index, fraction, address));
+                        (fraction, address) => onProgress?.Invoke(worker.Index, fraction, address),
+                        stage => onStage?.Invoke(worker.Index, stage));
                     results[index] = item;
                     onFinished?.Invoke(worker.Index, item);
                 }
@@ -109,7 +115,7 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
         _workers.Clear();
     }
 
-    private sealed class Worker(int index, string idaPath, IdaSdkVersion sdk) : IDisposable
+    private sealed class Worker(int index, string idaPath, IdaSdkVersion sdk, Action<string> log) : IDisposable
     {
         private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
@@ -121,7 +127,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables,
             string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath, string schemaProject,
             bool importInterfaces,
-            Action<double, ulong>? onProgress = null)
+            Action<double, ulong>? onProgress = null,
+            Action<string>? onStage = null)
         {
             string full = Path.GetFullPath(path);
 
@@ -163,13 +170,20 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     // are visible; relay those non-protocol lines through the parent's stderr.
                     if (message == null)
                     {
-                        Console.Error.WriteLine($"[worker {index}] {line}");
+                        log($"[worker {index}] {line}");
                         continue;
                     }
 
                     if (message.Kind == WireKind.Progress)
                     {
-                        onProgress?.Invoke(message.Fraction, message.Address);
+                        if (message.Stage != null)
+                        {
+                            onStage?.Invoke(message.Stage);
+                        }
+                        else
+                        {
+                            onProgress?.Invoke(message.Fraction, message.Address);
+                        }
                         continue;
                     }
 
@@ -289,7 +303,7 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             {
                 if (!string.IsNullOrWhiteSpace(e.Data))
                 {
-                    Console.Error.WriteLine($"[worker {index}] {e.Data}");
+                    log($"[worker {index}] {e.Data}");
                 }
             };
 

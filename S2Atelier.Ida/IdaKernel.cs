@@ -147,7 +147,8 @@ public static unsafe class IdaKernel
     public static IdaAnalysisResult Open(
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
-        string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false)
+        string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
+        Action<string>? onStage = null)
     {
         AssertOwner();
 
@@ -171,32 +172,57 @@ public static unsafe class IdaKernel
         bool completed = false;
         try
         {
-            DriveAnalysis(onProgress);
+            bool runInterfaces = importInterfaces && hl2SdkPath != null;
+            bool runSchema = importSchemaPath != null && hl2SdkPath != null;
+            bool runProtobufs = !string.IsNullOrEmpty(importProtobufsDir);
+            int passCount = new[] { runInterfaces, runSchema, patchPlt, nameConVars, nameFnPtrTables, runProtobufs }
+                .Count(x => x);
+            // Auto-analysis is only part of the job: the later passes can take minutes on large
+            // binaries, so they share the rest of the bar instead of leaving it at 100%.
+            double analysisShare = passCount == 0 ? 1.0 : 0.5;
+            int passIndex = 0;
+            void BeginPass(string stage)
+            {
+                onStage?.Invoke(stage);
+                onProgress?.Invoke(analysisShare + (1.0 - analysisShare) * passIndex++ / passCount, 0);
+            }
+
+            onStage?.Invoke("auto-analysis");
+            DriveAnalysis(onProgress == null ? null : (fraction, address) => onProgress(fraction * analysisShare, address));
             IdaNative.build_strlist();
 
-            var interfaceResult = importInterfaces && hl2SdkPath != null
-                ? ValveInterfaceImport.Run(full, hl2SdkPath)
+            if (runInterfaces) BeginPass("interfaces");
+            var interfaceResult = runInterfaces
+                ? ValveInterfaceImport.Run(full, hl2SdkPath!)
                 : new ValveInterfaceImportResult(false);
 
-            var schemaResult = importSchemaPath != null && hl2SdkPath != null
-                ? SchemaImport.Run(full, importSchemaPath, hl2SdkPath, schemaProject)
+            if (runSchema) BeginPass("schema");
+            var schemaResult = runSchema
+                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject)
                 : new SchemaImportResult(false);
 
+            if (patchPlt) BeginPass("plt");
             var pltResult = patchPlt
                 ? PltPatcher.Run()
                 : new PltPatchResult(false, 0, 0);
 
+            if (nameConVars) BeginPass("convars");
             var s2fResult = nameConVars
                 ? ConVarNaming.Run()
                 : new ConVarNamingResult(false, 0, 0, 0, 0, 0);
 
+            if (nameFnPtrTables) BeginPass("fnptr tables");
             var fnPtrResult = nameFnPtrTables
                 ? FnPtrNaming.Run()
                 : new FnPtrNamingResult(false, 0, 0);
 
-            var protoResult = !string.IsNullOrEmpty(importProtobufsDir)
-                ? ProtoImport.Run(importProtobufsDir)
+            if (runProtobufs) BeginPass("protobufs");
+            var protoResult = runProtobufs
+                ? ProtoImport.Run(importProtobufsDir!)
                 : new ProtoImportResult(false, 0, 0, 0);
+
+            onStage?.Invoke(save ? "saving" : "closing");
+            onProgress?.Invoke(1.0, 0);
 
             var result = new IdaAnalysisResult(
                 Functions: (int)IdaNative.get_func_qty(),
