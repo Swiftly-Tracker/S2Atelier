@@ -446,6 +446,10 @@ public static unsafe class SchemaImport
             polymorphic.Add(table.ClassName);
             if (table.ThisType != null) polymorphic.Add(table.ThisType);
             if (table.Truncated) Console.Error.WriteLine($"[schema] {table.ClassName} vtable 0x{table.AddressPoint:X}: scan limit reached.");
+            // Statically linked CRTs often lack a FLIRT match, leaving _purecall unnamed. It is still
+            // recognizable: every pure-virtual slot points at it and it never returns (it aborts).
+            foreach (ulong function in table.Functions)
+                if (IsFunctionStart(function) && IdaNative.func_does_return(function) == 0) pureCalls.Add(function);
         }
         var expected = new HashSet<string>(polymorphic, StringComparer.Ordinal);
         var queue = new Queue<string>(expected);
