@@ -23,6 +23,7 @@ var tests = new (string Name, Action Run)[]
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),
     ("function binding statistics", TestFunctionBindingStatistics),
+    ("constructor selection", TestConstructorSelection),
     ("Valve interface catalog", TestValveInterfaceCatalog),
     ("single Cvar slot with duplicate SDK rows", TestSingleCvarSlot),
     ("known interface implementations", TestKnownInterfaceImplementations),
@@ -493,6 +494,25 @@ static void TestPrototypeRewrite()
     Equal("void __cdecl __s2_vfunc_marker(Base *__s2_this, long x);",
         VTableAnalysis.RewriteFirstParameter("void __cdecl __s2_vfunc_marker(void (*cb)(int, int), long x);",
             "__s2_vfunc_marker", "Base", 2));
+}
+
+static void TestConstructorSelection()
+{
+    VptrWriter[] writers =
+    [
+        new(0x100, ["Base"], false, null, false),                // root constructor: no base call to confirm it
+        new(0x200, ["Derived"], true, 0x100, false),             // calls the base constructor, then stores its vtable
+        new(0x300, ["Derived"], false, null, true),              // deleting destructor reached from a vtable
+        new(0x400, ["Leaf", "Derived", "Base"], true, 0x900, false), // inlined destructor chain after a member call
+        new(0x500, ["Other"], true, 0x100, false),               // overloads: two constructors for one class
+        new(0x600, ["Other"], true, 0x200, false),
+        new(0x700, ["Thunked"], true, 0x200, true),              // referenced by an unnamed table
+        new(0x800, ["Base"], true, 0x100, false),                // base call writes the same class: not a constructor
+    ];
+    var selected = ConstructorAnalysis.SelectConstructors(writers);
+    Equal("Derived:512", string.Join(',', selected.OrderBy(x => x.Key).Select(x => $"{x.Key}:{x.Value}")));
+    Equal("CCSPlayerPawn::CCSPlayerPawn", ConstructorAnalysis.ConstructorName("CCSPlayerPawn"));
+    Equal("ns::Foo<a::B>::Foo", ConstructorAnalysis.ConstructorName("ns::Foo<a::B>"));
 }
 
 static void TestFunctionBindingStatistics()

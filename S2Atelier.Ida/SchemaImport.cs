@@ -128,13 +128,18 @@ public static unsafe class SchemaImport
             var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
                 sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts, fallback.Named);
             Stage("fallback function binding");
+            var constructorDiagnostics = new LimitedDiagnostics(32);
+            ConstructorNamingSummary constructors = ConstructorNaming.Apply(selection, platform, constructorDiagnostics);
+            constructorDiagnostics.Finish();
+            Stage("constructor naming");
             VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine, slots));
             Stage("vtable type binding");
             Console.Error.WriteLine(
                 $"[schema] {Path.GetFileName(binaryPath)}: project={selection.Project}, types={importedTypes}, " +
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
                 $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
-                $"conflicts={binding.Conflicts}, slot-names={binding.Named}, clang-errors={clangErrors}" +
+                $"conflicts={binding.Conflicts}, slot-names={binding.Named}, " +
+                $"constructors={constructors.Found}, constructors-named={constructors.Named}, clang-errors={clangErrors}" +
                 (clangErrors == 0 ? "." : " (ignored; valid declarations were imported)."));
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
                 binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
@@ -753,7 +758,7 @@ public static unsafe class SchemaImport
         return result;
     }
 
-    private static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics)
+    internal static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics)
     {
         if (!SdkFunctionBinding.CanUpdateType(address))
         {
@@ -920,10 +925,10 @@ public static unsafe class SchemaImport
             => TryBindThisParameter(address, owner, diagnostics) && _typed.Add(address);
 
         public bool TryName(ulong address, string name)
-            => SdkFunctionBinding.TryNameSlotFunction(address, name, _typed.Contains(address), diagnostics.Write);
+            => SdkFunctionBinding.TryNameFunction(address, name, _typed.Contains(address), "vtable slot", diagnostics.Write);
     }
 
-    private sealed class LimitedDiagnostics(int limit)
+    internal sealed class LimitedDiagnostics(int limit)
     {
         private int _seen;
 
