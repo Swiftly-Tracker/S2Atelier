@@ -38,6 +38,18 @@ public static partial class SchemaHeaderGenerator
         "ItemFlagTypes_t", "DamageTypes_t", "ObserverMode_t", "EntityDissolveType_t", "Class_T", "InputBitMask_t",
     ], StringComparer.Ordinal);
 
+    // HL2SDK names these template specializations in interface method signatures, but their argument
+    // is engine-private and never defined. IDAClang instantiates such specializations eagerly, so
+    // declare them explicitly without a definition. Shared with the Valve interface import headers.
+    internal static readonly string[] OpaqueSdkSpecializations =
+    [
+        // ISource2Server::GetEntity2Networkables; an instantiated map node holds the incomplete element.
+        "struct Entity2Networkable_t;",
+        "template <typename T> class CDefLess;",
+        "template <typename K, typename T, typename LF, typename I> class CUtlOrderedMap;",
+        "template <> class CUtlOrderedMap<int, Entity2Networkable_t, CDefLess<int>, unsigned short>;",
+    ];
+
     private static readonly string[] Includes =
     [
         "tier0/platform.h", "eiface.h", "iserver.h", "inetchannel.h", "iloopmode.h", "interfaces/interfaces.h",
@@ -172,8 +184,20 @@ public static partial class SchemaHeaderGenerator
         text.AppendLine("#include <cstddef>");
         text.AppendLine("#include <cstdint>");
         text.AppendLine("#include <utility>");
-        text.AppendLine("#define GOOGLE_PROTOBUF_INCLUDED_network_5fconnection_2eproto 1");
-        text.AppendLine("typedef int ENetworkDisconnectionReason;");
+        // eiface.h/igameevents.h pass CNetMessagePB<T> (see netmessage.h) for a couple of
+        // protobuf message types; T must be complete before those headers are reached. When the
+        // SDK's protoc compiled real headers for them (see ConfigureClang), pull those in now;
+        // otherwise these are absent and T stays an incomplete forward declaration, same as before.
+        foreach (string include in (string[])["netmessages.pb.h", "gameevents.pb.h"])
+        {
+            text.Append("#if __has_include(\"").Append(include).AppendLine("\")");
+            text.Append("#include \"").Append(include).AppendLine("\"");
+            text.AppendLine("#endif");
+        }
+        foreach (string declaration in OpaqueSdkSpecializations)
+        {
+            text.AppendLine(declaration);
+        }
         text.AppendLine("#define UTLDELEGATE_H 1");
         text.AppendLine("template <typename T> class CUtlDelegate;");
         for (int count = 0; count <= 5; count++)
