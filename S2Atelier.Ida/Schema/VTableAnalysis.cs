@@ -363,7 +363,7 @@ public static partial class VTableTypeBinder
         return new(completed, bound, unknown, conflicts);
     }
 
-    public static string FunctionName(string owner, ulong offset) => $"{owner}::vfn_{offset:X}";
+    public static string FunctionName(string owner, int slot) => $"{owner}::vfn_{slot}";
 
     public static string SlotName(string? name, int index)
     {
@@ -402,7 +402,7 @@ public static class VTableFunctionBinder
         IReadOnlyList<SchemaVTable>? tables = null)
         where TCollection : IReadOnlyCollection<string>
     {
-        var slots = new Dictionary<ulong, List<(string ClassName, string? ThisType, ulong Offset)>>();
+        var slots = new Dictionary<ulong, List<(string ClassName, string? ThisType, int Slot)>>();
         foreach (SchemaVTable table in tables ?? [])
         {
             for (int index = 0; index < table.Functions.Count; index++)
@@ -411,7 +411,7 @@ public static class VTableFunctionBinder
                 {
                     slots.Add(table.Functions[index], entries = []);
                 }
-                entries.Add((table.ClassName, table.ThisType, (ulong)index * 8));
+                entries.Add((table.ClassName, table.ThisType, index));
             }
         }
         int bound = 0, named = 0;
@@ -439,8 +439,8 @@ public static class VTableFunctionBinder
             {
                 skipped++;
             }
-            if (slots.TryGetValue(address, out var entries) && SlotOffset(entries, owner) is ulong offset &&
-                editor.TryName(address, VTableTypeBinder.FunctionName(SlotScope(entries, owner), offset)))
+            if (slots.TryGetValue(address, out var entries) && Slot(entries, owner) is int slot &&
+                editor.TryName(address, VTableTypeBinder.FunctionName(SlotScope(entries, owner), slot)))
             {
                 named++;
             }
@@ -448,18 +448,18 @@ public static class VTableFunctionBinder
         return new VTableBindingSummary(bound, skipped, conflicts, named);
     }
 
-    // A function shared by several tables usually keeps one slot offset; the owner's own tables decide
-    // otherwise, and an offset that still differs between them leaves the function unnamed.
-    private static ulong? SlotOffset(List<(string ClassName, string? ThisType, ulong Offset)> entries, string owner)
+    // A function shared by several tables usually keeps one slot index; the owner's own tables decide
+    // otherwise, and an index that still differs between them leaves the function unnamed.
+    private static int? Slot(List<(string ClassName, string? ThisType, int Slot)> entries, string owner)
     {
-        var own = entries.Where(x => x.ThisType == owner).Select(x => x.Offset).Distinct().ToArray();
-        var offsets = own.Length != 0 ? own : entries.Select(x => x.Offset).Distinct().ToArray();
-        return offsets.Length == 1 ? offsets[0] : null;
+        var own = entries.Where(x => x.ThisType == owner).Select(x => x.Slot).Distinct().ToArray();
+        var slots = own.Length != 0 ? own : entries.Select(x => x.Slot).Distinct().ToArray();
+        return slots.Length == 1 ? slots[0] : null;
     }
 
     // Adjustor thunks live only in one class's secondary table for a base, and every class has its own;
     // the class scopes them so they do not all collide under the base's name.
-    private static string SlotScope(List<(string ClassName, string? ThisType, ulong Offset)> entries, string owner)
+    private static string SlotScope(List<(string ClassName, string? ThisType, int Slot)> entries, string owner)
     {
         string[] classes = entries.Select(x => x.ClassName).Distinct(StringComparer.Ordinal).ToArray();
         return classes.Length == 1 && entries.All(x => x.ThisType != x.ClassName) && classes[0] != owner
