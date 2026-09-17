@@ -302,6 +302,44 @@ public static unsafe class SchemaImport
         }
     }
 
+    // IDA saves the selected source parser and its arguments in the database, and the GUI parses every
+    // declaration the user types (e.g. a variable type in the decompiler) with them. ConfigureClang
+    // points IDAClang at temporary headers and layout-only macros, which break those declarations, so
+    // every saved database ends with IDAClang's arguments cleared and the legacy parser selected.
+    internal static void ResetParser()
+    {
+        byte* clang = Utf8.Allocate("clang");
+        byte* empty = Utf8.Allocate(string.Empty);
+        byte* legacy = Utf8.Allocate("legacy");
+        try
+        {
+            IdaNative.set_parser_argv(clang, empty);
+            // Selecting "legacy" by name stores it explicitly; the documented empty name reports
+            // success in IDA 9.3 but leaves the current parser selected.
+            IdaNative.select_parser_by_name(legacy);
+        }
+        finally
+        {
+            Utf8.Free(legacy);
+            Utf8.Free(empty);
+            Utf8.Free(clang);
+        }
+
+        // get_selected_parser_name reports the legacy parser as an empty name.
+        QString name = default;
+        try
+        {
+            if (IdaNative.get_selected_parser_name(&name) != 0 && name.Read().Length != 0)
+            {
+                Console.Error.WriteLine($"[clang] could not select the legacy source parser; '{name.Read()}' remains selected.");
+            }
+        }
+        finally
+        {
+            name.Dispose();
+        }
+    }
+
     // (source .proto path relative to hl2SdkPath, in dependency order so a single protoc
     // invocation can compile all of them - protoc only emits output for files listed explicitly).
     private static readonly string[] NetworkProtoSources =
