@@ -203,6 +203,11 @@ public static unsafe class IdaKernel
                 ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject)
                 : new SchemaImportResult(false);
 
+            if (runInterfaces || runSchema)
+            {
+                Console.Error.WriteLine($"[types] {TemplateAliases.Run()} template alias(es) created.");
+            }
+
             if (patchPlt) BeginPass("plt");
             var pltResult = patchPlt
                 ? PltPatcher.Run()
