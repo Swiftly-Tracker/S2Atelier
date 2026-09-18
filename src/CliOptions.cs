@@ -26,6 +26,8 @@ internal sealed class CliOptions
 
     public string? ImportSchemaPath { get; private set; }
 
+    public string? ConVarTypesPath { get; private set; }
+
     public bool ImportInterfaces { get; private set; }
 
     public string? Hl2SdkPath { get; private set; }
@@ -105,6 +107,14 @@ internal sealed class CliOptions
                     options.ParseError = "--import-schema requires an sdk.json path.";
                     break;
 
+                case "--convar-types" when i + 1 < args.Length:
+                    options.ConVarTypesPath = args[++i];
+                    break;
+
+                case "--convar-types":
+                    options.ParseError = "--convar-types requires a convars.json path.";
+                    break;
+
                 case "--import-interfaces":
                     options.ImportInterfaces = true;
                     break;
@@ -136,6 +146,34 @@ internal sealed class CliOptions
         }
 
         return options;
+    }
+
+    public bool ValidateConVarOptions(out string? error)
+    {
+        error = null;
+        if (ConVarTypesPath == null)
+        {
+            return true;
+        }
+        if (!NameConVars)
+        {
+            error = "--convar-types requires --name-convars.";
+            return false;
+        }
+
+        try
+        {
+            ConVarTypesPath = Path.GetFullPath(ConVarTypesPath);
+            S2Atelier.Ida.ConVarNaming.LoadDumpedTypes(ConVarTypesPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or
+                                   NotSupportedException or System.Text.Json.JsonException)
+        {
+            error = $"Cannot use convar JSON '{ConVarTypesPath}': {ex.Message}";
+            return false;
+        }
+
+        return true;
     }
 
     public bool ValidateSchemaOptions(out string? error)

@@ -50,6 +50,19 @@ public static partial class SchemaHeaderGenerator
         "template <> class CUtlOrderedMap<int, Entity2Networkable_t, CDefLess<int>, unsigned short>;",
     ];
 
+    // The value types a convar can hold, indexed by EConVarType (tier1/convar.h).
+    internal static readonly string[] ConVarValueTypes =
+    [
+        "bool", "short", "unsigned short", "int", "unsigned int", "long long", "unsigned long long",
+        "float", "double", "CUtlString", "Color", "Vector2D", "Vector", "Vector4D", "QAngle", "VectorWS",
+    ];
+
+    // CConVar<T> is only instantiated in modules that declare convars, so the SDK translation unit has
+    // none of them. An extern of each value type instantiates the class - not its member bodies - which
+    // is all the convar pass needs to type a registered convar's global.
+    internal static IEnumerable<string> ConVarInstantiations()
+        => ConVarValueTypes.Select((type, index) => $"extern CConVar<{type}> __s2atelier_convar_{index:D2};");
+
     private static readonly string[] Includes =
     [
         "tier0/platform.h", "eiface.h", "iserver.h", "inetchannel.h", "iloopmode.h", "interfaces/interfaces.h",
@@ -238,6 +251,10 @@ public static partial class SchemaHeaderGenerator
         text.Append("static_assert(sizeof(void*) == 8, \"")
             .Append(platform == SchemaTargetPlatform.WindowsMsvc ? "PE x64" : "ELF x64")
             .AppendLine(" schema import requires 64-bit pointers\");");
+        foreach (string declaration in ConVarInstantiations())
+        {
+            text.AppendLine(declaration);
+        }
         text.AppendLine("#pragma pack(push, 1)");
         text.AppendLine();
     }

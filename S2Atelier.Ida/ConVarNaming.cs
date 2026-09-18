@@ -1,3 +1,4 @@
+using System.Text.Json;
 using S2Atelier.Ida.Generated;
 
 namespace S2Atelier.Ida;
@@ -12,13 +13,16 @@ public sealed class ConVarInfo
     public ulong Callback = ulong.MaxValue;
     public ulong Flags;
     public bool HasFlags;
+    // EConVarType (tier1/convar.h), or -1 when the registration does not reveal it.
+    public int ValueType = -1;
     public bool IsCommand;
     public readonly List<ulong> ReadSites = [];
     public readonly List<ulong> Accessors = [];
 }
 
 public sealed record ConVarNamingResult(
-    bool Applicable, int Found, int RenamedObjects, int RenamedHandlers, int Variables, int Commands);
+    bool Applicable, int Found, int RenamedObjects, int RenamedHandlers, int Variables, int Commands,
+    int TypedObjects = 0);
 
 internal enum ArgRole { Unknown, Object, Name, Flags, Description, Callback }
 
@@ -54,6 +58,12 @@ public static unsafe class ConVarNaming
     private const int ArgRoles = 6;
     private const int MaxCallbackInsns = 16;
 
+    private const int PtSilent = 0x0001;
+    private const int PtVariable = 0x0008;
+    private const int PtHigh = 0x0080;
+    private const uint TinfoDefinite = 0x0001;
+    private const uint UserTypeFlag = 0x02000000;
+
     private const int SnNoCheck = 0x01;
     private const int SnForce = 0x800;
     private const int SegPermWrite = 2;
@@ -76,7 +86,7 @@ public static unsafe class ConVarNaming
         "qword_", "asc_", "algn_", "stru_", "xmmword_", "ymmword_", "flt_", "dbl_",
     ];
 
-    public static ConVarNamingResult Run()
+    public static ConVarNamingResult Run(IReadOnlyDictionary<string, int>? dumpedTypes = null)
     {
         if (!LooksLikeSourceEngine())
         {
@@ -95,10 +105,17 @@ public static unsafe class ConVarNaming
         Collect(all, ctors);
         Classify(all, ctors);
 
+        ConVarTypeRecovery.FromStack(all, ConVarValueTypeNames.Length, spilledValueInfo: ArgRegs().Length == 4);
+        if (dumpedTypes != null)
+        {
+            ApplyDumpedTypes(all, dumpedTypes);
+        }
+
         var owners = HandlerOwners(all);
 
         int renamedObjects = 0;
         int renamedHandlers = 0;
+        int typedObjects = 0;
         int variables = 0;
         int commands = 0;
 
@@ -118,13 +135,83 @@ public static unsafe class ConVarNaming
                 renamedObjects++;
             }
 
+            if (ApplyType(cv))
+            {
+                typedObjects++;
+            }
+
             if (NameHandler(cv, owners))
             {
                 renamedHandlers++;
             }
         }
 
-        return new ConVarNamingResult(true, all.Count, renamedObjects, renamedHandlers, variables, commands);
+        return new ConVarNamingResult(true, all.Count, renamedObjects, renamedHandlers, variables, commands,
+            typedObjects);
+    }
+
+    /// <summary>
+    /// The EConVarType of each convar from a runtime dump (CS2-Dumps' convars.json), keyed by name. Names are
+    /// unique across modules, and a convar shared by several binaries is listed once under one of them, so
+    /// the module is not part of the key.
+    /// </summary>
+    public static IReadOnlyDictionary<string, int> LoadDumpedTypes(string path)
+    {
+        using FileStream stream = File.OpenRead(path);
+        using JsonDocument document = JsonDocument.Parse(stream);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException("expected an array of convars");
+        }
+
+        var types = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (JsonElement convar in document.RootElement.EnumerateArray())
+        {
+            if (convar.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String &&
+                convar.TryGetProperty("datatype_raw", out JsonElement type) && type.TryGetInt32(out int value))
+            {
+                types[name.GetString()!] = value;
+            }
+        }
+
+        if (types.Count == 0)
+        {
+            throw new JsonException("no convar carries both 'name' and 'datatype_raw'");
+        }
+
+        return types;
+    }
+
+    // A runtime dump reports the type the engine registered, so it wins; the binary still covers convars
+    // the dump does not list. Disagreements point at a dump from another build.
+    private static void ApplyDumpedTypes(IReadOnlyList<ConVarInfo> all, IReadOnlyDictionary<string, int> dumpedTypes)
+    {
+        int applied = 0;
+        var disagreements = new List<string>();
+        foreach (ConVarInfo cv in all)
+        {
+            if (cv.IsCommand || !dumpedTypes.TryGetValue(cv.Name, out int type) ||
+                type < 0 || type >= ConVarValueTypeNames.Length)
+            {
+                continue;
+            }
+
+            if (cv.ValueType >= 0 && cv.ValueType != type)
+            {
+                disagreements.Add($"{cv.Name} ({ConVarValueTypeNames[cv.ValueType]} in the binary, " +
+                                  $"{ConVarValueTypeNames[type]} in the dump)");
+            }
+
+            cv.ValueType = type;
+            applied++;
+        }
+
+        Console.Error.WriteLine($"[convars] {applied} types from the dump, {disagreements.Count} disagreeing " +
+                                "with the binary.");
+        foreach (string disagreement in disagreements.Take(10))
+        {
+            Console.Error.WriteLine($"[convars] type mismatch: {disagreement}");
+        }
     }
 
     private static bool LooksLikeSourceEngine()
@@ -258,6 +345,8 @@ public static unsafe class ConVarNaming
 
     private static int[]? _argRegs;
 
+    internal static int[] ArgumentRegisters() => ArgRegs();
+
     private static int[] ArgRegs()
     {
         if (_argRegs != null)
@@ -268,7 +357,8 @@ public static unsafe class ConVarNaming
         byte* buf = stackalloc byte[64];
         nuint len = IdaNative.get_file_type_name(buf, 64);
         string typeName = len == 0 ? "" : System.Text.Encoding.UTF8.GetString(buf, (int)len);
-        bool ms = typeName.Contains("Portable Executable", StringComparison.Ordinal);
+        // IDA spells this "Portable executable for AMD64 (PE)".
+        bool ms = typeName.Contains("portable executable", StringComparison.OrdinalIgnoreCase);
 
         string[] names = ms
             ? ["rcx", "rdx", "r8", "r9"]
@@ -767,6 +857,8 @@ public static unsafe class ConVarNaming
             cv.Callback = cbSlot >= 0 && ArgValue(from, pfnStart, cbSlot, out ulong cb)
                 ? cb
                 : CallbackNear(from, pfnStart);
+            cv.ValueType = ConVarTypeRecovery.FromCall(from, pfnStart, obj, flagSlot, ArgRegs(),
+                ConVarValueTypeNames.Length);
 
             st.Extracted++;
             found.Add(cv);
@@ -1115,6 +1207,44 @@ public static unsafe class ConVarNaming
         }
 
         return SetName(cv.Callback, wanted, SnNoCheck | SnForce);
+    }
+
+    private static readonly string[] ConVarValueTypeNames = Schema.SchemaHeaderGenerator.ConVarValueTypes;
+
+    private static bool ApplyType(ConVarInfo cv)
+    {
+        if (cv.IsCommand || cv.ValueType < 0 || cv.ValueType >= ConVarValueTypeNames.Length ||
+            // An explicit type, whether the user's or a previous run's, is never overwritten.
+            (IdaNative.get_aflags(cv.Object) & UserTypeFlag) != 0)
+        {
+            return false;
+        }
+
+        string value = ConVarValueTypeNames[cv.ValueType];
+        // CConVar<T> exists once the SDK headers were imported; CConVarRef<T> is its base and has the
+        // same layout, and some SDK translation units only instantiate that one.
+        foreach (string template in (string[])["CConVar", "CConVarRef"])
+        {
+            TypeInfo type = default;
+            var name = new QString();
+            byte* declaration = Utf8.Allocate($"{template}<{value}> __s2_convar;");
+            try
+            {
+                if (IdaNative.parse_decl(&type, &name, IdaNative.get_idati(), declaration, PtSilent | PtVariable | PtHigh) != 0 &&
+                    IdaNative.apply_tinfo(cv.Object, &type, TinfoDefinite) != 0)
+                {
+                    return true;
+                }
+            }
+            finally
+            {
+                Utf8.Free(declaration);
+                name.Dispose();
+                type.Dispose();
+            }
+        }
+
+        return false;
     }
 
     private static bool Apply(ConVarInfo cv)

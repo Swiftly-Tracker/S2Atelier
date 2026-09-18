@@ -58,6 +58,13 @@ public static class Entrypoint
             return;
         }
 
+        if (!options.ValidateConVarOptions(out string? convarError))
+        {
+            Console.Error.WriteLine(convarError);
+            Environment.Exit(1);
+            return;
+        }
+
         string root = options.Root ?? Directory.GetCurrentDirectory();
 
         var matcher = new Matcher();
@@ -79,7 +86,8 @@ public static class Entrypoint
 
         Console.WriteLine($"Analyzing {matches.Count} binaries with {options.Cores} concurrent worker(s), " +
                            $"SDK {options.SdkVersion}, save={!options.NoSave}, patch-plt={options.PatchPlt}, " +
-                           $"name-convars={options.NameConVars}, name-fnptr-tables={options.NameFnPtrTables}, " +
+                           $"name-convars={options.NameConVars}, convar-types={options.ConVarTypesPath ?? "off"}, " +
+                           $"name-fnptr-tables={options.NameFnPtrTables}, " +
                            $"import-protobufs={options.ImportProtobufsDir ?? "off"}, " +
                            $"import-interfaces={options.ImportInterfaces}, " +
                            $"import-schema={options.ImportSchemaPath ?? "off"}, schema-project={options.SchemaProject}.");
@@ -89,10 +97,10 @@ public static class Entrypoint
         var results = options.Progress
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.ImportInterfaces, options.Cores)
+                options.SchemaProject, options.ImportInterfaces, options.Cores, options.ConVarTypesPath)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.ImportInterfaces);
+                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath);
 
         Console.WriteLine();
 
@@ -156,7 +164,8 @@ public static class Entrypoint
             if (options.NameConVars)
             {
                 row.Add(item.ConVarNamingApplicable
-                    ? $"{item.ConVarNamingFound} found, {item.ConVarNamingRenamedObjects + item.ConVarNamingRenamedHandlers} renamed"
+                    ? $"{item.ConVarNamingFound} found, {item.ConVarNamingRenamedObjects + item.ConVarNamingRenamedHandlers} renamed, " +
+                      $"{item.ConVarNamingTypedObjects} typed"
                     : "n/a");
             }
 
@@ -212,7 +221,7 @@ public static class Entrypoint
     private static IReadOnlyList<BatchItem> RunPlain(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces)
+        string schemaProject, bool importInterfaces, string? convarTypesPath)
         => pool.RunBatch(
             paths,
             save,
@@ -229,7 +238,8 @@ public static class Entrypoint
                   $"{item.Strings} strings ({item.Elapsed.TotalSeconds:F1}s)" +
                   (patchPlt && item.PltPatchApplicable ? $" [plt: {item.PltPatched} patched, {item.PltUnresolved} unresolved]" : "") +
                   (nameConVars && item.ConVarNamingApplicable ? $" [convars: {item.ConVarNamingFound} found, " +
-                    $"{item.ConVarNamingRenamedObjects} objects + {item.ConVarNamingRenamedHandlers} handlers renamed]" : "") +
+                    $"{item.ConVarNamingRenamedObjects} objects + {item.ConVarNamingRenamedHandlers} handlers renamed, " +
+                    $"{item.ConVarNamingTypedObjects} typed]" : "") +
                   (nameFnPtrTables ? $" [fnptrs: {item.FnPtrNamingFound} found, {item.FnPtrNamingRenamed} renamed]" : "") +
                   (importProtobufsDir != null && item.ProtoImportApplicable
                     ? $" [protobufs: {item.ProtoTypesDefined} types, {item.ProtoImportErrors} errors]" : "")
@@ -243,12 +253,13 @@ public static class Entrypoint
                       $"{item.SchemaFunctionsSkipped} skipped, {item.SchemaFunctionConflicts} conflicts" +
                       (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors ignored" : "") + "]" : "")
                 : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"),
-            importInterfaces: importInterfaces);
+            importInterfaces: importInterfaces,
+            convarTypesPath: convarTypesPath);
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, int cores)
+        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath)
     {
         IReadOnlyList<BatchItem> results = [];
         var previousLog = pool.Log;
@@ -311,7 +322,8 @@ public static class Entrypoint
                         onProgress: (worker, fraction, _) => tasks[worker].Value = fraction * 100,
                         importInterfaces: importInterfaces,
                         onStage: (worker, stage) =>
-                            tasks[worker].Description = $"{names[worker]} [grey]{Markup.Escape(stage)}[/]");
+                            tasks[worker].Description = $"{names[worker]} [grey]{Markup.Escape(stage)}[/]",
+                        convarTypesPath: convarTypesPath);
                 });
         }
         finally
@@ -346,6 +358,11 @@ public static class Entrypoint
                                   the objects (cvar_/cmd_) and command handlers (cmd_..._callback), with
                                   descriptions written back as comments. Best-effort heuristic
                                   naming, not guaranteed accurate.
+              --convar-types <convars.json>
+                                  With --name-convars, take each convar's value type from a runtime
+                                  dump (CS2-Dumps' convars.json, datatype_raw) instead of recovering
+                                  it from the registration. Convars the dump does not list keep the
+                                  recovered type; disagreements are reported.
               --name-fnptr-tables
                                   Find name-resolution cascades anywhere in the binary and rename
                                   the resolved sub_X functions: both "cmp arg, &sub_X ; ... ;
