@@ -561,6 +561,13 @@ public static unsafe class ConVarNaming
         return pfn != null && *(ulong*)pfn == ea;
     }
 
+    // A function defined in this module: not an import slot, and not a PLT or import thunk.
+    private static bool IsLocalFunction(ulong ea)
+    {
+        void* pfn = IdaNative.get_func(ea);
+        return pfn != null && *(ulong*)pfn == ea && (*((ulong*)pfn + 2) & FuncThunk) == 0;
+    }
+
     private static ulong FuncStart(ulong ea)
     {
         void* pfn = IdaNative.get_func(ea);
@@ -613,7 +620,14 @@ public static unsafe class ConVarNaming
                     continue;
                 }
 
+                // Registration is tier1 code linked into every module. An import that takes a global
+                // and a name, such as FindOrCreateQuantizedFloatEncoder for networked fields, is not.
                 ulong target = CallTarget(callEa);
+                if (!IsLocalFunction(target))
+                {
+                    continue;
+                }
+
                 tally[target] = tally.GetValueOrDefault(target) + 1;
             }
         }
@@ -1208,6 +1222,9 @@ public static unsafe class ConVarNaming
 
         return SetName(cv.Callback, wanted, SnNoCheck | SnForce);
     }
+
+    // func_t::flags FUNC_THUNK.
+    private const ulong FuncThunk = 0x80;
 
     private static readonly string[] ConVarValueTypeNames = Schema.SchemaHeaderGenerator.ConVarValueTypes;
 
