@@ -7,7 +7,7 @@ public sealed record IdaAnalysisResult(
     int Functions, int Segments, int Strings, TimeSpan Elapsed,
     bool PltPatchApplicable = false, int PltPatched = 0, int PltUnresolved = 0,
     bool ConVarNamingApplicable = false, int ConVarNamingFound = 0,
-    int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0,
+    int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0, int ConVarNamingTypedObjects = 0,
     int FnPtrNamingFound = 0, int FnPtrNamingRenamed = 0,
     bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0,
     bool InterfaceImportApplicable = false, int InterfaceGlobalsFound = 0,
@@ -148,7 +148,7 @@ public static unsafe class IdaKernel
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
         string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
-        Action<string>? onStage = null)
+        Action<string>? onStage = null, string? convarTypesPath = null)
     {
         AssertOwner();
 
@@ -208,7 +208,7 @@ public static unsafe class IdaKernel
 
             if (nameConVars) BeginPass("convars");
             var s2fResult = nameConVars
-                ? ConVarNaming.Run()
+                ? ConVarNaming.Run(convarTypesPath == null ? null : ConVarNaming.LoadDumpedTypes(convarTypesPath))
                 : new ConVarNamingResult(false, 0, 0, 0, 0, 0);
 
             if (nameFnPtrTables) BeginPass("fnptr tables");
@@ -236,6 +236,7 @@ public static unsafe class IdaKernel
                 ConVarNamingFound: s2fResult.Found,
                 ConVarNamingRenamedObjects: s2fResult.RenamedObjects,
                 ConVarNamingRenamedHandlers: s2fResult.RenamedHandlers,
+                ConVarNamingTypedObjects: s2fResult.TypedObjects,
                 FnPtrNamingFound: fnPtrResult.Found,
                 FnPtrNamingRenamed: fnPtrResult.Renamed,
                 ProtoImportApplicable: protoResult.Applicable,

@@ -9,7 +9,7 @@ public sealed record BatchItem(
     string Path, bool Succeeded, int Functions, int Segments, int Strings, TimeSpan Elapsed, string? Error,
     bool PltPatchApplicable = false, int PltPatched = 0, int PltUnresolved = 0,
     bool ConVarNamingApplicable = false, int ConVarNamingFound = 0,
-    int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0,
+    int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0, int ConVarNamingTypedObjects = 0,
     int FnPtrNamingFound = 0, int FnPtrNamingRenamed = 0,
     bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0,
     bool InterfaceImportApplicable = false, int InterfaceGlobalsFound = 0,
@@ -56,7 +56,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
         Action<int, BatchItem>? onFinished = null,
         Action<int, double, ulong>? onProgress = null,
         bool importInterfaces = false,
-        Action<int, string>? onStage = null)
+        Action<int, string>? onStage = null,
+        string? convarTypesPath = null)
     {
         if (paths.Count == 0)
         {
@@ -82,7 +83,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     var item = worker.Run(paths[index], save, patchPlt, nameConVars, nameFnPtrTables,
                         importProtobufsDir, importSchemaPath, hl2SdkPath, schemaProject, importInterfaces,
                         (fraction, address) => onProgress?.Invoke(worker.Index, fraction, address),
-                        stage => onStage?.Invoke(worker.Index, stage));
+                        stage => onStage?.Invoke(worker.Index, stage),
+                        convarTypesPath);
                     results[index] = item;
                     onFinished?.Invoke(worker.Index, item);
                 }
@@ -128,7 +130,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath, string schemaProject,
             bool importInterfaces,
             Action<double, ulong>? onProgress = null,
-            Action<string>? onStage = null)
+            Action<string>? onStage = null,
+            string? convarTypesPath = null)
         {
             string full = Path.GetFullPath(path);
 
@@ -151,6 +154,7 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     NameFnPtrTables = nameFnPtrTables,
                     ImportProtobufsDir = importProtobufsDir,
                     ImportSchemaPath = importSchemaPath,
+                    ConVarTypesPath = convarTypesPath,
                     Hl2SdkPath = hl2SdkPath,
                     ImportInterfaces = importInterfaces,
                     SchemaProject = schemaProject,
@@ -199,6 +203,7 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                             ConVarNamingFound: message.ConVarNamingFound,
                             ConVarNamingRenamedObjects: message.ConVarNamingRenamedObjects,
                             ConVarNamingRenamedHandlers: message.ConVarNamingRenamedHandlers,
+                            ConVarNamingTypedObjects: message.ConVarNamingTypedObjects,
                             FnPtrNamingFound: message.FnPtrNamingFound,
                             FnPtrNamingRenamed: message.FnPtrNamingRenamed,
                             ProtoImportApplicable: message.ProtoImportApplicable,

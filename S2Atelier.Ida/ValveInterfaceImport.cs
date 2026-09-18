@@ -369,6 +369,14 @@ public static unsafe class ValveInterfaceImport
         {
             output.Append("#include \"").Append(include.Replace('\\', '/')).AppendLine("\"");
         }
+        // Convar globals are typed by the convar pass, which can run without the schema import.
+        output.AppendLine("#if __has_include(\"tier1/convar.h\")");
+        output.AppendLine("#include \"tier1/convar.h\"");
+        foreach (string declaration in Schema.SchemaHeaderGenerator.ConVarInstantiations())
+        {
+            output.AppendLine(declaration);
+        }
+        output.AppendLine("#endif");
         int index = 0;
         foreach (ValveInterfaceDefinition definition in definitions.Distinct())
         {
