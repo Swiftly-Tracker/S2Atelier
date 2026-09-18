@@ -87,6 +87,7 @@ public static class Entrypoint
         Console.WriteLine($"Analyzing {matches.Count} binaries with {options.Cores} concurrent worker(s), " +
                            $"SDK {options.SdkVersion}, save={!options.NoSave}, patch-plt={options.PatchPlt}, " +
                            $"name-convars={options.NameConVars}, convar-types={options.ConVarTypesPath ?? "off"}, " +
+                           $"name-log-channels={options.NameLogChannels}, " +
                            $"name-fnptr-tables={options.NameFnPtrTables}, " +
                            $"import-protobufs={options.ImportProtobufsDir ?? "off"}, " +
                            $"import-interfaces={options.ImportInterfaces}, " +
@@ -97,10 +98,11 @@ public static class Entrypoint
         var results = options.Progress
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.ImportInterfaces, options.Cores, options.ConVarTypesPath)
+                options.SchemaProject, options.ImportInterfaces, options.Cores, options.ConVarTypesPath,
+                options.NameLogChannels)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath);
+                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath, options.NameLogChannels);
 
         Console.WriteLine();
 
@@ -120,6 +122,11 @@ public static class Entrypoint
         if (options.NameConVars)
         {
             table.AddColumn("ConVars");
+        }
+
+        if (options.NameLogChannels)
+        {
+            table.AddColumn("Log channels");
         }
 
         if (options.NameFnPtrTables)
@@ -166,6 +173,13 @@ public static class Entrypoint
                 row.Add(item.ConVarNamingApplicable
                     ? $"{item.ConVarNamingFound} found, {item.ConVarNamingRenamedObjects + item.ConVarNamingRenamedHandlers} renamed, " +
                       $"{item.ConVarNamingTypedObjects} typed"
+                    : "n/a");
+            }
+
+            if (options.NameLogChannels)
+            {
+                row.Add(item.LogChannelNamingApplicable
+                    ? $"{item.LogChannelNamingFound} found, {item.LogChannelNamingRenamed} renamed"
                     : "n/a");
             }
 
@@ -221,7 +235,7 @@ public static class Entrypoint
     private static IReadOnlyList<BatchItem> RunPlain(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, string? convarTypesPath)
+        string schemaProject, bool importInterfaces, string? convarTypesPath, bool nameLogChannels)
         => pool.RunBatch(
             paths,
             save,
@@ -240,6 +254,8 @@ public static class Entrypoint
                   (nameConVars && item.ConVarNamingApplicable ? $" [convars: {item.ConVarNamingFound} found, " +
                     $"{item.ConVarNamingRenamedObjects} objects + {item.ConVarNamingRenamedHandlers} handlers renamed, " +
                     $"{item.ConVarNamingTypedObjects} typed]" : "") +
+                  (nameLogChannels && item.LogChannelNamingApplicable
+                    ? $" [log channels: {item.LogChannelNamingFound} found, {item.LogChannelNamingRenamed} renamed]" : "") +
                   (nameFnPtrTables ? $" [fnptrs: {item.FnPtrNamingFound} found, {item.FnPtrNamingRenamed} renamed]" : "") +
                   (importProtobufsDir != null && item.ProtoImportApplicable
                     ? $" [protobufs: {item.ProtoTypesDefined} types, {item.ProtoImportErrors} errors]" : "")
@@ -254,12 +270,13 @@ public static class Entrypoint
                       (item.SchemaClangErrors > 0 ? $", {item.SchemaClangErrors} clang errors ignored" : "") + "]" : "")
                 : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"),
             importInterfaces: importInterfaces,
-            convarTypesPath: convarTypesPath);
+            convarTypesPath: convarTypesPath,
+            nameLogChannels: nameLogChannels);
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath)
+        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath, bool nameLogChannels)
     {
         IReadOnlyList<BatchItem> results = [];
         var previousLog = pool.Log;
@@ -323,7 +340,8 @@ public static class Entrypoint
                         importInterfaces: importInterfaces,
                         onStage: (worker, stage) =>
                             tasks[worker].Description = $"{names[worker]} [grey]{Markup.Escape(stage)}[/]",
-                        convarTypesPath: convarTypesPath);
+                        convarTypesPath: convarTypesPath,
+                        nameLogChannels: nameLogChannels);
                 });
         }
         finally
@@ -363,6 +381,10 @@ public static class Entrypoint
                                   dump (CS2-Dumps' convars.json, datatype_raw) instead of recovering
                                   it from the registration. Convars the dump does not list keep the
                                   recovered type; disagreements are reported.
+              --name-log-channels
+                                  Name the globals LoggingSystem_RegisterLoggingChannel results are
+                                  stored in LOG_<CHANNEL NAME>, typed LoggingChannelID_t when the SDK
+                                  headers were imported.
               --name-fnptr-tables
                                   Find name-resolution cascades anywhere in the binary and rename
                                   the resolved sub_X functions: both "cmp arg, &sub_X ; ... ;

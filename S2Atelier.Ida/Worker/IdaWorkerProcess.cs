@@ -35,7 +35,7 @@ public static class IdaWorkerProcess
 
             RunJob(message.Path, message.Save, message.PatchPlt, message.NameConVars, message.NameFnPtrTables,
                 message.ImportProtobufsDir, message.ImportSchemaPath, message.Hl2SdkPath, message.SchemaProject,
-                message.ImportInterfaces, message.ConVarTypesPath);
+                message.ImportInterfaces, message.ConVarTypesPath, message.NameLogChannels);
         }
 
         return 0;
@@ -44,7 +44,7 @@ public static class IdaWorkerProcess
     private static void RunJob(
         string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables, string? importProtobufsDir,
         string? importSchemaPath, string? hl2SdkPath, string schemaProject, bool importInterfaces,
-        string? convarTypesPath)
+        string? convarTypesPath, bool nameLogChannels)
     {
         if (!File.Exists(path))
         {
@@ -60,7 +60,8 @@ public static class IdaWorkerProcess
                     Send(new WireMessage { Kind = WireKind.Progress, Fraction = fraction, Address = address }),
                 importInterfaces,
                 stage => Send(new WireMessage { Kind = WireKind.Progress, Stage = stage }),
-                convarTypesPath);
+                convarTypesPath,
+                nameLogChannels);
 
             Send(new WireMessage
             {
@@ -79,6 +80,9 @@ public static class IdaWorkerProcess
                 ConVarNamingTypedObjects = result.ConVarNamingTypedObjects,
                 FnPtrNamingFound = result.FnPtrNamingFound,
                 FnPtrNamingRenamed = result.FnPtrNamingRenamed,
+                LogChannelNamingApplicable = result.LogChannelNamingApplicable,
+                LogChannelNamingFound = result.LogChannelNamingFound,
+                LogChannelNamingRenamed = result.LogChannelNamingRenamed,
                 ProtoImportApplicable = result.ProtoImportApplicable,
                 ProtoTypesDefined = result.ProtoTypesDefined,
                 ProtoImportErrors = result.ProtoImportErrors,

@@ -22,6 +22,8 @@ internal sealed class CliOptions
 
     public bool NameFnPtrTables { get; private set; }
 
+    public bool NameLogChannels { get; private set; }
+
     public string? ImportProtobufsDir { get; private set; }
 
     public string? ImportSchemaPath { get; private set; }
@@ -89,6 +91,10 @@ internal sealed class CliOptions
 
                 case "--name-convars":
                     options.NameConVars = true;
+                    break;
+
+                case "--name-log-channels":
+                    options.NameLogChannels = true;
                     break;
 
                 case "--name-fnptr-tables":
