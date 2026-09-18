@@ -15,8 +15,8 @@ internal sealed class WireMessage
     public bool NameFnPtrTables { get; init; }
     public string? ImportProtobufsDir { get; init; }
     public string? ImportSchemaPath { get; init; }
-
     public string? ConVarTypesPath { get; init; }
+    public bool NameLogChannels { get; init; }
     public string? Hl2SdkPath { get; init; }
     public bool ImportInterfaces { get; init; }
     public string SchemaProject { get; init; } = "auto";
@@ -41,6 +41,9 @@ internal sealed class WireMessage
     public int ConVarNamingTypedObjects { get; init; }
     public int FnPtrNamingFound { get; init; }
     public int FnPtrNamingRenamed { get; init; }
+    public bool LogChannelNamingApplicable { get; init; }
+    public int LogChannelNamingFound { get; init; }
+    public int LogChannelNamingRenamed { get; init; }
     public bool ProtoImportApplicable { get; init; }
     public int ProtoTypesDefined { get; init; }
     public int ProtoImportErrors { get; init; }

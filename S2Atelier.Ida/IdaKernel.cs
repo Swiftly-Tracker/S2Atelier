@@ -9,6 +9,7 @@ public sealed record IdaAnalysisResult(
     bool ConVarNamingApplicable = false, int ConVarNamingFound = 0,
     int ConVarNamingRenamedObjects = 0, int ConVarNamingRenamedHandlers = 0, int ConVarNamingTypedObjects = 0,
     int FnPtrNamingFound = 0, int FnPtrNamingRenamed = 0,
+    bool LogChannelNamingApplicable = false, int LogChannelNamingFound = 0, int LogChannelNamingRenamed = 0,
     bool ProtoImportApplicable = false, int ProtoTypesDefined = 0, int ProtoImportErrors = 0,
     bool InterfaceImportApplicable = false, int InterfaceGlobalsFound = 0,
     int InterfaceGlobalsRenamed = 0, int InterfaceTypesApplied = 0,
@@ -148,7 +149,7 @@ public static unsafe class IdaKernel
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
         string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
-        Action<string>? onStage = null, string? convarTypesPath = null)
+        Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false)
     {
         AssertOwner();
 
@@ -175,7 +176,8 @@ public static unsafe class IdaKernel
             bool runInterfaces = importInterfaces && hl2SdkPath != null;
             bool runSchema = importSchemaPath != null && hl2SdkPath != null;
             bool runProtobufs = !string.IsNullOrEmpty(importProtobufsDir);
-            int passCount = new[] { runInterfaces, runSchema, patchPlt, nameConVars, nameFnPtrTables, runProtobufs }
+            int passCount = new[]
+                    { runInterfaces, runSchema, patchPlt, nameConVars, nameLogChannels, nameFnPtrTables, runProtobufs }
                 .Count(x => x);
             // Auto-analysis is only part of the job: the later passes can take minutes on large
             // binaries, so they share the rest of the bar instead of leaving it at 100%.
@@ -211,6 +213,11 @@ public static unsafe class IdaKernel
                 ? ConVarNaming.Run(convarTypesPath == null ? null : ConVarNaming.LoadDumpedTypes(convarTypesPath))
                 : new ConVarNamingResult(false, 0, 0, 0, 0, 0);
 
+            if (nameLogChannels) BeginPass("log channels");
+            var logResult = nameLogChannels
+                ? LogChannelNaming.Run()
+                : new LogChannelNamingResult(false, 0, 0);
+
             if (nameFnPtrTables) BeginPass("fnptr tables");
             var fnPtrResult = nameFnPtrTables
                 ? FnPtrNaming.Run()
@@ -239,6 +246,9 @@ public static unsafe class IdaKernel
                 ConVarNamingTypedObjects: s2fResult.TypedObjects,
                 FnPtrNamingFound: fnPtrResult.Found,
                 FnPtrNamingRenamed: fnPtrResult.Renamed,
+                LogChannelNamingApplicable: logResult.Applicable,
+                LogChannelNamingFound: logResult.Found,
+                LogChannelNamingRenamed: logResult.Renamed,
                 ProtoImportApplicable: protoResult.Applicable,
                 ProtoTypesDefined: protoResult.TypesDefined,
                 ProtoImportErrors: protoResult.Errors,
