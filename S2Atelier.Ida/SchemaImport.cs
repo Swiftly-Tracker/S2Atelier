@@ -35,6 +35,9 @@ public static unsafe class SchemaImport
     private const int PtVariable = 0x00000008;
     private const int PtHigh = 0x00000080;
     private const uint TinfoDefinite = 0x0001;
+    private const uint TinfoGuessed = 0x0000;
+    // AFL_USERTI: the prototype was set by a user or applied as definite.
+    private const uint UserTypeFlag = 0x02000000;
     // tinfo_t::gta_prop_t and sta_prop_t are stable across the supported IDA SDK 9.2/9.3.
     private const int GtaFunctionArgumentCount = 23;
     private const int StaFunctionArgumentName = 30;
@@ -765,6 +768,25 @@ public static unsafe class SchemaImport
         return result;
     }
 
+    private static bool ReturnsFloatingPoint(TypeInfo* function)
+    {
+        var printed = new QString();
+        try
+        {
+            if (IdaNative.print_tinfo(&printed, null, 0, 0, 0, function, null, null) == 0)
+            {
+                return false;
+            }
+
+            string text = printed.Read();
+            int convention = text.IndexOf("__", StringComparison.Ordinal);
+            string returned = convention > 0 ? text[..convention] : text;
+            return returned.Contains("float", StringComparison.Ordinal) ||
+                   returned.Contains("double", StringComparison.Ordinal);
+        }
+        finally { printed.Dispose(); }
+    }
+
     // argumentName null keeps the name IDA gave argument 0, for functions not known to be methods.
     internal static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics,
         string? argumentName = "this")
@@ -777,7 +799,12 @@ public static unsafe class SchemaImport
         TypeInfo original = default;
         try
         {
-            if (IdaNative.get_tinfo(&original, address) == 0 && IdaNative.guess_tinfo(&original, address) == 0)
+            // IDA's guess often misses arguments the function only passes on. A definite prototype built on
+            // it would make Hex-Rays drop them at every call, so it stays a guess, which Hex-Rays extends while
+            // keeping the this type; only a prototype that was already definite is applied as one.
+            uint applyFlags = (IdaNative.get_aflags(address) & UserTypeFlag) != 0 ? TinfoDefinite : TinfoGuessed;
+            bool guessed = IdaNative.get_tinfo(&original, address) == 0;
+            if (guessed && IdaNative.guess_tinfo(&original, address) == 0)
             {
                 diagnostics.Write($"[schema] vfunc 0x{address:X}: no usable prototype; skipped.");
                 return false;
@@ -786,6 +813,15 @@ public static unsafe class SchemaImport
             if (rawCount > 255)
             {
                 diagnostics.Write($"[schema] vfunc 0x{address:X}: existing type is not a function prototype; skipped.");
+                return false;
+            }
+
+            // A prototype without arguments gets this added, so it ends up with at least one.
+            if (guessed && GuessedPrototype.LooksIncomplete(address, Math.Max(1, (int)rawCount),
+                    ReturnsFloatingPoint(&original)))
+            {
+                diagnostics.Write($"[schema] vfunc 0x{address:X}: IDA's guessed prototype misses arguments or the " +
+                                  "return value; skipped.");
                 return false;
             }
 
@@ -824,7 +860,7 @@ public static unsafe class SchemaImport
                     {
                         Utf8.Free(nativeThisName);
                     }
-                    return IdaNative.apply_tinfo(address, &original, TinfoDefinite) != 0;
+                    return IdaNative.apply_tinfo(address, &original, applyFlags) != 0;
                 }
                 finally
                 {
@@ -886,7 +922,7 @@ public static unsafe class SchemaImport
                     Utf8.Free(thisName);
                 }
 
-                return IdaNative.apply_tinfo(address, &replacement, TinfoDefinite) != 0;
+                return IdaNative.apply_tinfo(address, &replacement, applyFlags) != 0;
             }
             finally
             {

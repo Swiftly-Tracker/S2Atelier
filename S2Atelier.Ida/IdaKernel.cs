@@ -206,6 +206,9 @@ public static unsafe class IdaKernel
             if (runInterfaces || runSchema)
             {
                 Console.Error.WriteLine($"[types] {TemplateAliases.Run()} template alias(es) created.");
+                // The imports parse with IDAClang; the later passes, like the GUI, use the legacy parser and
+                // reach template instantiations through the aliases.
+                SchemaImport.ResetParser();
             }
 
             if (patchPlt) BeginPass("plt");

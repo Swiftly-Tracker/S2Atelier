@@ -1244,7 +1244,8 @@ public static unsafe class ConVarNaming
         {
             TypeInfo type = default;
             var name = new QString();
-            byte* declaration = Utf8.Allocate($"{template}<{value}> __s2_convar;");
+            // The legacy parser reads no template arguments; the instantiation is reached through its alias.
+            byte* declaration = Utf8.Allocate($"{TemplateAliases.Alias($"{template}<{value}>")} __s2_convar;");
             try
             {
                 if (IdaNative.parse_decl(&type, &name, IdaNative.get_idati(), declaration, PtSilent | PtVariable | PtHigh) != 0 &&
