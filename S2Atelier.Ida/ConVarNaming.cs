@@ -10,6 +10,10 @@ public sealed class ConVarInfo
     public ulong Object = ulong.MaxValue;
     public ulong RegisteredAt = ulong.MaxValue;
     public ulong Ctor = ulong.MaxValue;
+    // The ConVarRefAbstract::Init call on the object before its registration, when the constructor was inlined.
+    public ulong InitAt = ulong.MaxValue;
+    // Registered as CConVarRef(name) does: the object, the name and the type in one call.
+    public bool ReferenceStyle;
     public ulong Callback = ulong.MaxValue;
     public ulong Flags;
     public bool HasFlags;
@@ -145,6 +149,9 @@ public static unsafe class ConVarNaming
                 renamedHandlers++;
             }
         }
+
+        int accessors = ConVarAccessorNaming.Run(all, ConVarValueTypeNames, ArgRegs());
+        Console.Error.WriteLine($"[convars] {accessors} convar function(s) named.");
 
         return new ConVarNamingResult(true, all.Count, renamedObjects, renamedHandlers, variables, commands,
             typedObjects);
@@ -872,7 +879,7 @@ public static unsafe class ConVarNaming
                 ? cb
                 : CallbackNear(from, pfnStart);
             cv.ValueType = ConVarTypeRecovery.FromCall(from, pfnStart, obj, flagSlot, ArgRegs(),
-                ConVarValueTypeNames.Length);
+                ConVarValueTypeNames.Length, out cv.InitAt, out cv.ReferenceStyle);
 
             st.Extracted++;
             found.Add(cv);

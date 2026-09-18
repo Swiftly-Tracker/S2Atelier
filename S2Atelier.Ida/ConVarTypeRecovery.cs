@@ -34,9 +34,13 @@ internal static unsafe class ConVarTypeRecovery
     /// <summary>
     /// The type as an argument of the registration itself, or of the ConVarRefAbstract::Init call the
     /// CConVar constructor makes on the same object beforehand. Both are exact; -1 when neither applies.
+    /// initCall is that Init call when there is one; ownType says the type came from the registration itself.
     /// </summary>
-    internal static int FromCall(ulong registeredAt, ulong pfnStart, ulong obj, int flagSlot, int[] regs, int typeCount)
+    internal static int FromCall(ulong registeredAt, ulong pfnStart, ulong obj, int flagSlot, int[] regs, int typeCount,
+        out ulong initCall, out bool ownType)
     {
+        initCall = BadAddr;
+        ownType = false;
         if (regs.Length < 3 || pfnStart == BadAddr)
         {
             return -1;
@@ -47,6 +51,7 @@ internal static unsafe class ConVarTypeRecovery
         if (flagSlot != 2 && ArgSetup(registeredAt, pfnStart, regs[2], out ulong own, out bool ownIsAddress) &&
             !ownIsAddress && own < (ulong)typeCount)
         {
+            ownType = true;
             return (int)own;
         }
 
@@ -67,11 +72,15 @@ internal static unsafe class ConVarTypeRecovery
 
             // find_reg_value gives up on constants set this far ahead of the call, so read the
             // instructions that load the argument registers instead.
-            return ArgSetup(ea, pfnStart, regs[0], out ulong self, out bool isAddress) && isAddress && self == obj &&
-                   ArgSetup(ea, pfnStart, regs[2], out ulong type, out bool typeIsAddress) && !typeIsAddress &&
-                   type < (ulong)typeCount
-                ? (int)type
-                : -1;
+            if (!ArgSetup(ea, pfnStart, regs[0], out ulong self, out bool isAddress) || !isAddress || self != obj ||
+                !ArgSetup(ea, pfnStart, regs[2], out ulong type, out bool typeIsAddress) || typeIsAddress ||
+                type >= (ulong)typeCount)
+            {
+                return -1;
+            }
+
+            initCall = ea;
+            return (int)type;
         }
 
         return -1;
