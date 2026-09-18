@@ -156,6 +156,21 @@ internal static unsafe class SdkFunctionBinding
         return true;
     }
 
+    // Records a prototype this run bound without naming the function, so later runs may update it.
+    internal static void RecordType(ulong address, string source, Action<string> diagnostic)
+    {
+        string oldComment = ReadComment(address);
+        var metadata = ReadOwnership(oldComment);
+        string comment = MergeOwnership(oldComment, new(metadata?.Name, FingerprintAt(address), metadata?.Source ?? source));
+        byte* text = Utf8.Allocate(comment);
+        try
+        {
+            if (IdaNative.set_cmt(address, text, 1) == 0)
+                diagnostic($"[schema] function 0x{address:X}: ownership comment could not be saved.");
+        }
+        finally { Utf8.Free(text); }
+    }
+
     internal static string? SelectImplementationOwner(IEnumerable<string?> candidates,
         Func<string, string, bool> isZeroOffsetBase)
     {

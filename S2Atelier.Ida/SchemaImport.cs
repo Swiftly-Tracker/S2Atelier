@@ -132,6 +132,11 @@ public static unsafe class SchemaImport
             ConstructorNamingSummary constructors = ConstructorNaming.Apply(selection, platform, constructorDiagnostics);
             constructorDiagnostics.Finish();
             Stage("constructor naming");
+            var argumentDiagnostics = new LimitedDiagnostics(32);
+            ArgumentPropagationSummary arguments =
+                ArgumentPropagation.Run(ConVarNaming.ArgumentRegisters(), argumentDiagnostics);
+            argumentDiagnostics.Finish();
+            Stage("argument propagation");
             VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine, slots));
             Stage("vtable type binding");
             Console.Error.WriteLine(
@@ -139,7 +144,9 @@ public static unsafe class SchemaImport
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
                 $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
                 $"conflicts={binding.Conflicts}, slot-names={binding.Named}, " +
-                $"constructors={constructors.Found}, constructors-named={constructors.Named}, clang-errors={clangErrors}" +
+                $"constructors={constructors.Found}, constructors-named={constructors.Named}, " +
+                $"argument-candidates={arguments.Candidates}, arguments-typed={arguments.Typed}, " +
+                $"arguments-without-common-base={arguments.NoCommonBase}, clang-errors={clangErrors}" +
                 (clangErrors == 0 ? "." : " (ignored; valid declarations were imported)."));
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
                 binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
@@ -758,7 +765,9 @@ public static unsafe class SchemaImport
         return result;
     }
 
-    internal static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics)
+    // argumentName null keeps the name IDA gave argument 0, for functions not known to be methods.
+    internal static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics,
+        string? argumentName = "this")
     {
         if (!SdkFunctionBinding.CanUpdateType(address))
         {
@@ -801,10 +810,10 @@ public static unsafe class SchemaImport
                         return false;
                     }
 
-                    byte* nativeThisName = Utf8.Allocate("this");
+                    byte* nativeThisName = argumentName == null ? null : Utf8.Allocate(argumentName);
                     try
                     {
-                        if (IdaNative.set_tinfo_property4(&original, StaFunctionArgumentName, 0,
+                        if (nativeThisName != null && IdaNative.set_tinfo_property4(&original, StaFunctionArgumentName, 0,
                                 (nuint)nativeThisName, 0, 0) != 0)
                         {
                             diagnostics.Write($"[schema] vfunc 0x{address:X}: could not name argument 0 'this'; skipped.");
@@ -861,7 +870,8 @@ public static unsafe class SchemaImport
                     return false;
                 }
 
-                byte* thisName = Utf8.Allocate("this");
+                // The rewritten declaration names the parameter with a placeholder; a1 is IDA's own name for it.
+                byte* thisName = Utf8.Allocate(argumentName ?? "a1");
                 try
                 {
                     if (IdaNative.set_tinfo_property4(&replacement, StaFunctionArgumentName, 0,
