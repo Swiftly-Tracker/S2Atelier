@@ -59,16 +59,16 @@ internal sealed unsafe class VTableDrift
                 continue;
             }
 
-            // The class's own table when it has one, else the one whose slots say the most.
-            var candidates = declaration.GroupBy(x => x.Key.Table)
+            // The table whose slots say the most: only a fingerprint that occurs once in a table identifies its
+            // slot, and an interface's own table is the same pure-call stub throughout, so the class's own table
+            // only wins a tie.
+            var chosen = declaration.GroupBy(x => x.Key.Table)
                 .Select(x => (Table: byAddress[x.Key], Slots: x.OrderBy(y => y.Key.Index).ToList()))
-                .ToList();
-            var chosen = candidates.FirstOrDefault(x => x.Table.ClassName == sdkClass && x.Table.ObjectOffset == 0);
-            if (chosen.Table == null)
-            {
-                chosen = candidates.OrderByDescending(x => x.Slots.Count(y => Fingerprint(x.Table.Functions[y.Key.Index]) != null))
-                    .ThenBy(x => x.Table.AddressPoint).First();
-            }
+                .OrderByDescending(x => x.Slots.Select(y => Fingerprint(x.Table.Functions[y.Key.Index]))
+                    .Where(y => y != null).GroupBy(y => y).Count(y => y.Count() == 1))
+                .ThenByDescending(x => x.Table.ClassName == sdkClass && x.Table.ObjectOffset == 0)
+                .ThenBy(x => x.Table.AddressPoint)
+                .First();
 
             int count = chosen.Slots.Max(x => x.Key.Index) + 1;
             var names = new string?[count];
