@@ -816,16 +816,25 @@ public static unsafe class SchemaImport
                 return false;
             }
 
-            // A prototype without arguments gets this added, so it ends up with at least one.
-            if (guessed && GuessedPrototype.LooksIncomplete(address, Math.Max(1, (int)rawCount),
-                    ReturnsFloatingPoint(&original)))
+            // A guess can miss parameters the callers visibly pass; they are added as integers, which Hex-Rays
+            // refines since the prototype stays a guess. A missing float return or a float argument has no
+            // type to add, so such a guess is left alone. A prototype without arguments gets this added, so it
+            // ends up with at least one.
+            int missing = 0;
+            if (guessed)
             {
-                diagnostics.Write($"[schema] vfunc 0x{address:X}: IDA's guessed prototype misses arguments or the " +
-                                  "return value; skipped.");
-                return false;
+                (int passed, bool floats) = GuessedPrototype.ArgumentsAtCalls(address);
+                missing = Math.Max(0, passed - Math.Max(1, (int)rawCount));
+                if ((!ReturnsFloatingPoint(&original) && GuessedPrototype.ReturnsFloat(address)) ||
+                    (missing > 0 && floats))
+                {
+                    diagnostics.Write($"[schema] vfunc 0x{address:X}: IDA's guessed prototype misses a floating-point " +
+                                      "return or argument; skipped.");
+                    return false;
+                }
             }
 
-            if (rawCount > 0)
+            if (rawCount > 0 && missing == 0)
             {
                 TypeInfo thisType = default;
                 var thisName = new QString();
@@ -880,7 +889,9 @@ public static unsafe class SchemaImport
                 {
                     return false;
                 }
-                declaration = VTableAnalysis.RewriteFirstParameter(printed.Read(), marker, owner, checked((int)rawCount));
+                declaration = VTableAnalysis.AppendParameters(
+                    VTableAnalysis.RewriteFirstParameter(printed.Read(), marker, owner, checked((int)rawCount)),
+                    Math.Max(1, (int)rawCount), missing);
                 if (!declaration.TrimEnd().EndsWith(';'))
                 {
                     declaration += ";";

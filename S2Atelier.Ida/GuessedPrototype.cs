@@ -3,10 +3,9 @@ using S2Atelier.Ida.Generated;
 namespace S2Atelier.Ida;
 
 /// <summary>
-/// Evidence that IDA's guessed prototype for a function (guess_tinfo) is incomplete: a floating-point
-/// return, or callers that set up more argument registers than it has parameters. Applying such a guess,
-/// even as a guess, makes Hex-Rays drop the return value and the missing arguments at every call, so a
-/// prototype built on it is only worth applying when neither shows.
+/// Evidence of what IDA's guessed prototype for a function (guess_tinfo) misses: a floating-point return,
+/// or arguments its callers set up beyond its parameters. Applying such a guess, even as a guess, makes
+/// Hex-Rays drop the return value and the missing arguments at every call.
 /// </summary>
 internal static unsafe class GuessedPrototype
 {
@@ -14,11 +13,8 @@ internal static unsafe class GuessedPrototype
     private const int MaxBlockInsns = 16;
     private const int MaxReturnInsns = 6;
 
-    internal static bool LooksIncomplete(ulong function, int parameters, bool floatReturn)
-        => (!floatReturn && ReturnsFloat(function)) || ArgumentsAtCalls(function) > parameters;
-
     // xmm0 written, and rax not, just before a return. Comparisons only read their first operand.
-    private static bool ReturnsFloat(ulong function)
+    internal static bool ReturnsFloat(ulong function)
     {
         ushort xmm0 = Register("xmm0"), al = Register("al");
         byte* buf = stackalloc byte[Insn.BufferSize];
@@ -65,9 +61,10 @@ internal static unsafe class GuessedPrototype
     /// <summary>
     /// The most parameters any direct caller passes in registers: the highest argument register written in
     /// the call's block before it. Microsoft x64 assigns a position to either the integer or the xmm
-    /// register; System V counts the two sequences separately.
+    /// register; System V counts the two sequences separately. Floats says some argument went in an xmm
+    /// register, whose type a caller does not show.
     /// </summary>
-    private static int ArgumentsAtCalls(ulong function)
+    internal static (int Count, bool Floats) ArgumentsAtCalls(ulong function)
     {
         int[] integers = ConVarNaming.ArgumentRegisters();
         bool positional = integers.Length == 4;
@@ -75,6 +72,7 @@ internal static unsafe class GuessedPrototype
         int floats = positional ? 4 : 8;
         byte* buf = stackalloc byte[Insn.BufferSize];
         int most = 0;
+        bool anyFloat = false;
         foreach (ulong call in Xrefs.CodeTo(function))
         {
             if (!Insn.TryDecode(call, buf) || !Insn.IsCall(buf) || Insn.OpType(buf, 0) != Insn.OpNear ||
@@ -112,9 +110,10 @@ internal static unsafe class GuessedPrototype
             }
 
             most = Math.Max(most, positional ? Math.Max(integerCount, floatCount) : integerCount + floatCount);
+            anyFloat |= floatCount > 0;
         }
 
-        return most;
+        return (most, anyFloat);
     }
 
     private static bool IsLabel(ulong ea)

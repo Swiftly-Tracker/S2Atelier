@@ -156,6 +156,25 @@ public static partial class VTableAnalysis
         return 1 + type.BaseClasses.Max(x => InheritanceDepth(x, classes));
     }
 
+    /// <summary>Adds <paramref name="count"/> integer parameters after the <paramref name="present"/> ones.</summary>
+    public static string AppendParameters(string declaration, int present, int count)
+    {
+        // Variadic arguments already cover whatever the callers pass.
+        if (count <= 0 || declaration.Contains("...", StringComparison.Ordinal))
+        {
+            return declaration;
+        }
+
+        int close = declaration.LastIndexOf(')');
+        if (close < 0)
+        {
+            throw new SchemaFormatException("IDA function declaration has no parameter list.");
+        }
+
+        string added = string.Concat(Enumerable.Range(present + 1, count).Select(i => $", __int64 a{i}"));
+        return declaration[..close] + added + declaration[close..];
+    }
+
     public static string RewriteFirstParameter(string declaration, string marker, string thisType, int argumentCount)
     {
         int markerOffset = declaration.IndexOf(marker, StringComparison.Ordinal);
