@@ -99,10 +99,11 @@ public static class Entrypoint
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
                 options.SchemaProject, options.ImportInterfaces, options.Cores, options.ConVarTypesPath,
-                options.NameLogChannels)
+                options.NameLogChannels, options.VTableBaselineDirectory, options.VTableSnapshotDirectory)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath, options.NameLogChannels);
+                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath, options.NameLogChannels,
+                options.VTableBaselineDirectory, options.VTableSnapshotDirectory);
 
         Console.WriteLine();
 
@@ -235,7 +236,8 @@ public static class Entrypoint
     private static IReadOnlyList<BatchItem> RunPlain(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, string? convarTypesPath, bool nameLogChannels)
+        string schemaProject, bool importInterfaces, string? convarTypesPath, bool nameLogChannels,
+        string? vtableBaseline, string? vtableSnapshot)
         => pool.RunBatch(
             paths,
             save,
@@ -271,12 +273,15 @@ public static class Entrypoint
                 : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"),
             importInterfaces: importInterfaces,
             convarTypesPath: convarTypesPath,
-            nameLogChannels: nameLogChannels);
+            nameLogChannels: nameLogChannels,
+            vtableBaselineDirectory: vtableBaseline,
+            vtableSnapshotDirectory: vtableSnapshot);
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath, bool nameLogChannels)
+        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath, bool nameLogChannels,
+        string? vtableBaseline, string? vtableSnapshot)
     {
         IReadOnlyList<BatchItem> results = [];
         var previousLog = pool.Log;
@@ -341,7 +346,9 @@ public static class Entrypoint
                         onStage: (worker, stage) =>
                             tasks[worker].Description = $"{names[worker]} [grey]{Markup.Escape(stage)}[/]",
                         convarTypesPath: convarTypesPath,
-                        nameLogChannels: nameLogChannels);
+                        nameLogChannels: nameLogChannels,
+                        vtableBaselineDirectory: vtableBaseline,
+                        vtableSnapshotDirectory: vtableSnapshot);
                 });
         }
         finally
@@ -415,6 +422,14 @@ public static class Entrypoint
                                   names, apply interface pointer types, and import reliable virtual
                                   tables through IDAClang. Requires --hl2sdk; sdk.json is not needed.
               --hl2sdk <dir>      HL2SDK root used by --import-interfaces and/or --import-schema.
+              --vtable-baseline <dir>
+                                  With --import-schema, compare the SDK-named vtables with the previous
+                                  build's snapshot (<dir>/<binary>.vtables.json). A class whose slots moved
+                                  so the SDK would rename a known function keeps its SDK names back; its
+                                  vtable is commented and it is reported until the SDK agrees again.
+              --vtable-snapshot <dir>
+                                  With --import-schema, write this build's snapshot to <dir>, the baseline
+                                  of the next build.
               --schema-project <auto|project>
                                   Project roots to import. Default auto derives client/server/etc.
                                   from the binary filename (including libNAME.so).

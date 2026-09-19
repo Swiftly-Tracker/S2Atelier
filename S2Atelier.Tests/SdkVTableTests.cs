@@ -7,6 +7,28 @@ internal static class SdkVTableTests
     private static void Check(bool condition, string message)
     { if (!condition) throw new Exception(message); }
 
+    internal static void Drift()
+    {
+        string?[] names = ["Init", "Shutdown", "Think", "Save", "Load"];
+        string?[] prints = ["A", "B", "C", "D", "E"];
+        List<string> Recorded(string?[] fingerprints, string?[] methods)
+            => [.. fingerprints.Zip(methods, (f, n) => $"{f ?? "-"} {n ?? "-"}")];
+
+        Check(VTableDrift.Conflicts(Recorded(prints, names), prints, names).Count == 0, "unchanged build has no drift");
+        // Valve inserted a method before Think: C, D and E moved one slot down; a stale SDK names them by position.
+        string?[] shifted = ["A", "B", "X", "C", "D", "E"];
+        string?[] stale = ["Init", "Shutdown", "Think", "Save", "Load", "unk"];
+        var conflicts = VTableDrift.Conflicts(Recorded(prints, names), shifted, stale);
+        Check(conflicts.Count == 3 && conflicts[0] == (2, 3), "insertion shows as matched functions renamed");
+        // The SDK was fixed: the new method is declared, the others follow it.
+        string?[] fixedSdk = ["Init", "Shutdown", "Added", "Think", "Save", "Load"];
+        Check(VTableDrift.Conflicts(Recorded(prints, names), shifted, fixedSdk).Count == 0, "fixed SDK agrees again");
+        // A body that repeats in the table, or a stub without a fingerprint, is no evidence.
+        string?[] repeated = ["A", "A", null, "D", "E"];
+        Check(VTableDrift.Conflicts(Recorded(repeated, names), ["A", "A", null, "D", "E"],
+            ["Shutdown", "Init", "Save", "Save", "Load"]).Count == 0, "repeated and missing fingerprints ignored");
+    }
+
     internal static void Managed()
     {
         var classes = new[] { Class("Base"), Class("Other"), Class("Derived", "Base", "Other") }.ToDictionary(x => x.Name);

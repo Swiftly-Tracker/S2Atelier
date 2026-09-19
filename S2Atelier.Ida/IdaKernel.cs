@@ -149,7 +149,8 @@ public static unsafe class IdaKernel
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
         string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
-        Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false)
+        Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false,
+        string? vtableBaselineDirectory = null, string? vtableSnapshotDirectory = null)
     {
         AssertOwner();
 
@@ -200,7 +201,8 @@ public static unsafe class IdaKernel
 
             if (runSchema) BeginPass("schema");
             var schemaResult = runSchema
-                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject)
+                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject, vtableBaselineDirectory,
+                    vtableSnapshotDirectory)
                 : new SchemaImportResult(false);
 
             if (runInterfaces || runSchema)

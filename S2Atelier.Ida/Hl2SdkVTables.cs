@@ -101,6 +101,84 @@ internal static class SdkVTableMatching
     }
 }
 
+/// <summary>
+/// How hl2sdk headers parsed last time, per platform: those that did not parse on their own and the batches
+/// that parsed together, each header with a hash of its contents. The SDK changes rarely, so a run reuses the
+/// batches whose headers are unchanged and only splits up what changed.
+/// </summary>
+internal sealed class ParseCache(string path, ParseCache.State state)
+{
+    internal sealed record State(Dictionary<string, string> Failed, List<Dictionary<string, string>> Batches);
+
+    internal static ParseCache Load(SchemaTargetPlatform platform)
+    {
+        string path = Path.Combine(Path.GetTempPath(), "s2atelier", $"sdk-parse-{platform}.json");
+        try
+        {
+            if (File.Exists(path) &&
+                System.Text.Json.JsonSerializer.Deserialize<State>(File.ReadAllText(path)) is State loaded)
+            {
+                return new(path, loaded);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+        }
+
+        return new(path, new([], []));
+    }
+
+    internal bool Failed(string header, string contents) => state.Failed.GetValueOrDefault(header) == Hash(contents);
+
+    internal void Record(string header, string contents) => state.Failed[header] = Hash(contents);
+
+    /// <summary>
+    /// The headers grouped as they parsed together last time, where every header of a batch is wanted and
+    /// unchanged; the rest go into one new batch.
+    /// </summary>
+    internal List<List<string>> Batches(List<string> wanted, IReadOnlyDictionary<string, string> headers)
+    {
+        var left = new HashSet<string>(wanted, StringComparer.OrdinalIgnoreCase);
+        var batches = new List<List<string>>();
+        foreach (var batch in state.Batches)
+        {
+            if (batch.All(x => left.Contains(x.Key) && x.Value == Hash(headers[x.Key])))
+            {
+                batches.Add([.. batch.Keys]);
+                left.ExceptWith(batch.Keys);
+            }
+        }
+
+        if (left.Count > 0)
+        {
+            batches.Add([.. wanted.Where(left.Contains)]);
+        }
+
+        return batches;
+    }
+
+    internal void Save(List<List<string>> parsed, IReadOnlyDictionary<string, string> headers)
+    {
+        var fresh = parsed.Select(b => b.ToDictionary(h => h, h => Hash(headers[h]), StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        // Batches of headers this run did not ask for stay for the runs that do.
+        var parsedHeaders = parsed.SelectMany(x => x).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        fresh.AddRange(state.Batches.Where(b => !b.Keys.Any(parsedHeaders.Contains)));
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(state with { Batches = fresh }));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Only a cache: the next run finds the batches again.
+        }
+    }
+
+    private static string Hash(string contents)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(contents)));
+}
+
 internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposable
 {
     private readonly Dictionary<(string Class, ulong Offset), SdkVTableDefinition> _definitions = [];
@@ -110,45 +188,77 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
 
     internal static Hl2SdkVTables Load(string root, SchemaTargetPlatform platform, SchemaSelection selection,
         IReadOnlyList<SchemaVTable> tables, Action<string> diagnostic)
+        => LoadClasses(root, platform, tables.SelectMany(t => SdkVTableMatching.Candidates(t with
+        {
+            ObjectOffset = t.ObjectOffset ?? 0, ThisType = t.ThisType ?? t.ClassName,
+        }, selection.Classes)).Select(x => x.Class), diagnostic);
+
+    /// <summary>The vtables hl2sdk declares for the named classes; names it does not declare are ignored.</summary>
+    internal static Hl2SdkVTables LoadClasses(string root, SchemaTargetPlatform platform, IEnumerable<string> classes,
+        Action<string> diagnostic, IReadOnlyDictionary<string, string>? headers = null)
     {
         var result = new Hl2SdkVTables(diagnostic);
         string directory = Path.Combine(Path.GetTempPath(), $"s2atelier-vtables-{Guid.NewGuid():N}");
         bool keep = false;
         try
         {
-            var headers = ValveInterfaceCatalog.ReadHeaders(root);
-            var requested = tables.SelectMany(t => SdkVTableMatching.Candidates(t with
-            {
-                ObjectOffset = t.ObjectOffset ?? 0, ThisType = t.ThisType ?? t.ClassName,
-            }, selection.Classes)).Select(x => x.Class).Distinct(StringComparer.Ordinal).ToArray();
+            headers ??= ValveInterfaceCatalog.ReadHeaders(root);
+            var requested = classes.Distinct(StringComparer.Ordinal).ToArray();
             var groups = requested.Select(name => (Name: name, Header: ValveInterfaceCatalog.FindDefinitionHeader(name, headers)))
                 .Where(x => x.Header != null).GroupBy(x => x.Header!, StringComparer.OrdinalIgnoreCase).ToArray();
             if (groups.Length == 0) return result;
             Directory.CreateDirectory(directory);
             SchemaImport.ConfigureClang(root, platform, skipLayoutAssertions: true, directory);
+            // IDAClang's setup dominates a parse, so headers are parsed together, in the batches that worked last
+            // time. A batch that fails is halved until the header, or the pair of headers, that breaks it stands
+            // alone; a header that does not parse alone is skipped until its file changes.
+            var cache = ParseCache.Load(platform);
+            var byHeader = groups.ToDictionary(g => g.Key, StringComparer.OrdinalIgnoreCase);
+            var skipped = byHeader.Keys.Where(x => cache.Failed(x, headers[x])).ToList();
+            if (skipped.Count > 0)
+                diagnostic($"[schema-sdk] {skipped.Count} header(s) that did not parse before skipped: " +
+                    string.Join(", ", skipped) + ".");
+            var pending = byHeader.Keys.Except(skipped, StringComparer.OrdinalIgnoreCase).ToList();
+            var batches = cache.Batches(pending, headers);
+            var parsed = new List<List<string>>();
             int index = 0;
-            foreach (var group in groups)
+            foreach (var batch in batches) Parse(batch);
+            cache.Save(parsed, headers);
+            return result;
+
+            void Parse(List<string> batch)
             {
                 string path = Path.Combine(directory, $"sdk-{index++:D4}.hpp");
-                var definitions = group.Select(x => new ValveInterfaceDefinition("", "", x.Name, "", x.Header)).ToArray();
-                ValveInterfaceImport.WriteHeader(path, ["public/tier0/platform.h", group.Key], definitions);
+                var definitions = batch.SelectMany(h => byHeader[h]
+                    .Select(x => new ValveInterfaceDefinition("", "", x.Name, "", x.Header))).ToArray();
+                ValveInterfaceImport.WriteHeader(path, ["public/tier0/platform.h", .. batch], definitions);
                 // The parser must never resolve a requested SDK class from a previous schema import.
                 void* til = CreateLibrary();
-                if (til == null) { diagnostic("[schema-sdk] cannot allocate temporary TIL."); continue; }
+                if (til == null) { diagnostic("[schema-sdk] cannot allocate temporary TIL."); return; }
                 int errors;
-                try { errors = SchemaImport.ParseHeader(path, false, true, til); }
+                try { errors = SchemaImport.ParseHeader(path, false, batch.Count == 1, til); }
                 catch { IdaNative.free_til(til); throw; }
-                if (errors != 0)
+                if (errors == 0)
                 {
-                    IdaNative.free_til(til);
-                    keep = true;
-                    diagnostic($"[schema-sdk] {group.Key}: {errors} parse error(s); group skipped.");
-                    continue;
+                    result._libraries.Add((nint)til);
+                    foreach (string header in batch)
+                        foreach (var item in byHeader[header]) result.ReadClass(til, item.Name, header);
+                    parsed.Add(batch);
+                    return;
                 }
-                result._libraries.Add((nint)til);
-                foreach (var item in group) result.ReadClass(til, item.Name, group.Key);
+
+                IdaNative.free_til(til);
+                if (batch.Count > 1)
+                {
+                    Parse(batch[..(batch.Count / 2)]);
+                    Parse(batch[(batch.Count / 2)..]);
+                    return;
+                }
+
+                keep = true;
+                cache.Record(batch[0], headers[batch[0]]);
+                diagnostic($"[schema-sdk] {batch[0]}: {errors} parse error(s); group skipped.");
             }
-            return result;
         }
         catch { result.Dispose(); throw; }
         finally
@@ -247,6 +357,35 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
 
     internal IReadOnlyDictionary<(ulong Table, int Index), SdkResolvedSlot> Resolve(
         IReadOnlyList<SchemaVTable> tables, SchemaSelection selection)
+        => Resolve(tables, table => SdkVTableMatching.Match(table, selection.Classes, _definitions, diagnostic,
+            definition => CompatibleLayout(table, definition, (void*)_sources[(definition.ClassName, definition.Offset)])));
+
+    /// <summary>
+    /// Slots of primary tables whose this type is itself a class hl2sdk declares: the class's declared
+    /// methods are the table's first slots, in declaration order.
+    /// </summary>
+    internal IReadOnlyDictionary<(ulong Table, int Index), SdkResolvedSlot> ResolveDeclared(IReadOnlyList<SchemaVTable> tables)
+        => Resolve(tables, table =>
+        {
+            var slots = new Dictionary<int, (SdkVTableDefinition, SdkSlotDefinition)>();
+            if (table.ThisType == null || !_definitions.TryGetValue((table.ThisType, 0), out var definition))
+            {
+                return slots;
+            }
+
+            if (definition.Slots.Count > table.Functions.Count)
+            {
+                diagnostic($"[schema-sdk] {table.ClassName}: {definition.ClassName} SDK table has {definition.Slots.Count} " +
+                    $"slots, binary has {table.Functions.Count}; definition skipped.");
+                return slots;
+            }
+
+            for (int i = 0; i < definition.Slots.Count; i++) slots[i] = (definition, definition.Slots[i]);
+            return slots;
+        });
+
+    private IReadOnlyDictionary<(ulong Table, int Index), SdkResolvedSlot> Resolve(IReadOnlyList<SchemaVTable> tables,
+        Func<SchemaVTable, IReadOnlyDictionary<int, (SdkVTableDefinition Definition, SdkSlotDefinition Slot)>> matcher)
     {
         var result = new Dictionary<(ulong, int), SdkResolvedSlot>();
         int inherited = 0, dependencyWalks = 0;
@@ -256,8 +395,7 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
         var imported = new HashSet<(nint Source, SdkPortableType Prototype)>();
         foreach (var table in tables)
         {
-            foreach (var (index, match) in SdkVTableMatching.Match(table, selection.Classes, _definitions, diagnostic,
-                definition => CompatibleLayout(table, definition, (void*)_sources[(definition.ClassName, definition.Offset)])))
+            foreach (var (index, match) in matcher(table))
             {
                 var definition = match.Definition;
                 void* source = (void*)_sources[(definition.ClassName, definition.Offset)];

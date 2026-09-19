@@ -48,7 +48,9 @@ public static unsafe class SchemaImport
         string binaryPath,
         string sdkJsonPath,
         string hl2SdkPath,
-        string requestedProject)
+        string requestedProject,
+        string? vtableBaselineDirectory = null,
+        string? vtableSnapshotDirectory = null)
     {
         var stageClock = Stopwatch.StartNew();
         void Stage(string name)
@@ -114,7 +116,14 @@ public static unsafe class SchemaImport
             Stage("class vptr/layout resolution");
             using var sdk = Hl2SdkVTables.Load(hl2SdkPath, platform, selection, scan.Tables, Console.Error.WriteLine);
             Stage("SDK header load");
-            var slots = sdk.Resolve(scan.Tables, selection);
+            // Tables whose slots moved since the previous build keep their SDK names back, here and in the
+            // vtable types built from the same slots below.
+            string module = Path.GetFileName(binaryPath);
+            module = module.EndsWith(".i64", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
+            var drift = new VTableDrift(module, vtableBaselineDirectory == null
+                ? null
+                : Path.Combine(vtableBaselineDirectory, VTableDrift.SnapshotName(module)));
+            var slots = drift.Filter(scan.Tables, sdk.Resolve(scan.Tables, selection));
             Stage("SDK prototype resolution");
             VTableBindingSummary sdkBinding = SdkFunctionBinding.Bind(scan.Tables, slots,
                 scan.PureCallAddresses, scan.UnresolvedThisAddresses, Console.Error.WriteLine);
@@ -131,6 +140,18 @@ public static unsafe class SchemaImport
             var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
                 sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts, fallback.Named);
             Stage("fallback function binding");
+            SdkInterfaceSummary interfaces = SdkInterfaceBinding.Run(hl2SdkPath, platform, selection,
+                scan.PureCallAddresses, drift, Console.Error.WriteLine);
+            Stage("SDK interface binding");
+            foreach (string held in drift.Held)
+            {
+                Console.Error.WriteLine($"[vtable-drift] {held}");
+            }
+
+            if (vtableSnapshotDirectory != null)
+            {
+                drift.Write(Path.Combine(vtableSnapshotDirectory, VTableDrift.SnapshotName(module)));
+            }
             var constructorDiagnostics = new LimitedDiagnostics(32);
             ConstructorNamingSummary constructors = ConstructorNaming.Apply(selection, platform, constructorDiagnostics);
             constructorDiagnostics.Finish();
@@ -147,6 +168,8 @@ public static unsafe class SchemaImport
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
                 $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
                 $"conflicts={binding.Conflicts}, slot-names={binding.Named}, " +
+                $"interface-tables={interfaces.Tables}, interface-bound={interfaces.Binding.Bound}, " +
+                $"drifted-tables={drift.Held.Count}, " +
                 $"constructors={constructors.Found}, constructors-named={constructors.Named}, " +
                 $"argument-candidates={arguments.Candidates}, arguments-typed={arguments.Typed}, " +
                 $"arguments-without-common-base={arguments.NoCommonBase}, clang-errors={clangErrors}" +

@@ -19,6 +19,7 @@ var tests = new (string Name, Action Run)[]
     ("vtable naming and partial failures", TestVTableTypes),
     ("gated native schema vtable types", TestNativeSchemaVTables),
     ("SDK vtable matching and ownership", SdkVTableTests.Managed),
+    ("vtable drift against the previous build", SdkVTableTests.Drift),
     ("gated native SDK vtables", SdkVTableTests.Native),
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),

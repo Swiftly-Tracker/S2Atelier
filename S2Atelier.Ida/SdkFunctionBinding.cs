@@ -11,9 +11,12 @@ internal static unsafe class SdkFunctionBinding
 {
     internal const string Marker = "S2Atelier HL2SDK vfunc v1 ";
 
+    // nameByClass names a function after the class whose table holds it rather than the this type, for tables
+    // of classes only known from RTTI, whose this type is the SDK interface they implement.
     internal static VTableBindingSummary Bind(IReadOnlyList<SchemaVTable> tables,
         IReadOnlyDictionary<(ulong Table, int Index), SdkResolvedSlot> slots,
-        IReadOnlySet<ulong> pureCalls, IReadOnlySet<ulong> unresolved, Action<string> diagnostic)
+        IReadOnlySet<ulong> pureCalls, IReadOnlySet<ulong> unresolved, Action<string> diagnostic,
+        bool nameByClass = false)
     {
         var candidates = tables.SelectMany(table => table.Functions.Select((address, index) =>
             (Address: address, Table: table, Slot: slots.GetValueOrDefault((table.AddressPoint, index)))))
@@ -93,7 +96,8 @@ internal static unsafe class SdkFunctionBinding
 
                 if (CanUpdateName(currentName, metadata))
                 {
-                    string wanted = owner + "::" + method;
+                    var classes = group.Select(x => x.Table.ClassName).Distinct(StringComparer.Ordinal).ToList();
+                    string wanted = (nameByClass && classes.Count == 1 ? classes[0] : owner) + "::" + method;
                     // Overloads and distinct table instances must not steal an existing address name.
                     if (!NameAvailable(wanted, address)) wanted += $"_ea_{address:X}";
                     byte* name = Utf8.Allocate(wanted);

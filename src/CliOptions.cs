@@ -30,6 +30,10 @@ internal sealed class CliOptions
 
     public string? ConVarTypesPath { get; private set; }
 
+    public string? VTableBaselineDirectory { get; private set; }
+
+    public string? VTableSnapshotDirectory { get; private set; }
+
     public bool ImportInterfaces { get; private set; }
 
     public string? Hl2SdkPath { get; private set; }
@@ -121,6 +125,22 @@ internal sealed class CliOptions
                     options.ParseError = "--convar-types requires a convars.json path.";
                     break;
 
+                case "--vtable-baseline" when i + 1 < args.Length:
+                    options.VTableBaselineDirectory = args[++i];
+                    break;
+
+                case "--vtable-baseline":
+                    options.ParseError = "--vtable-baseline requires a directory path.";
+                    break;
+
+                case "--vtable-snapshot" when i + 1 < args.Length:
+                    options.VTableSnapshotDirectory = args[++i];
+                    break;
+
+                case "--vtable-snapshot":
+                    options.ParseError = "--vtable-snapshot requires a directory path.";
+                    break;
+
                 case "--import-interfaces":
                     options.ImportInterfaces = true;
                     break;
@@ -205,6 +225,18 @@ internal sealed class CliOptions
             error = "--schema-project requires --import-schema.";
             return false;
         }
+        if (ImportSchemaPath == null && (VTableBaselineDirectory != null || VTableSnapshotDirectory != null))
+        {
+            error = "--vtable-baseline and --vtable-snapshot require --import-schema.";
+            return false;
+        }
+        if (VTableBaselineDirectory != null && !Directory.Exists(VTableBaselineDirectory))
+        {
+            error = $"vtable baseline directory does not exist: '{VTableBaselineDirectory}'.";
+            return false;
+        }
+        VTableBaselineDirectory = VTableBaselineDirectory == null ? null : Path.GetFullPath(VTableBaselineDirectory);
+        VTableSnapshotDirectory = VTableSnapshotDirectory == null ? null : Path.GetFullPath(VTableSnapshotDirectory);
         if (!needsHl2Sdk)
         {
             return true;
