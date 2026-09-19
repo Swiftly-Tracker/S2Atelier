@@ -156,8 +156,9 @@ internal static unsafe class ConVarTypeRecovery
 
         try
         {
+            // A forward declaration answers the member count with an error value, not a count.
             nuint members = IdaNative.get_tinfo_property(type.Typid, MemberCount);
-            for (nuint i = 0; i < members; i++)
+            for (nuint i = 0; i < members && members <= 16384; i++)
             {
                 if (!ValveImplementationTypes.ReadMember(type.Typid, i, out IdaUdtMember member))
                 {

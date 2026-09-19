@@ -157,7 +157,9 @@ internal static unsafe class ValveImplementationTypes
     {
         if (IdaNative.compare_tinfo(type, iface, 0) != 0) return true;
         if (depth >= 16) return false;
+        // A forward declaration answers the member count with an error value, not a count.
         nuint count = IdaNative.get_tinfo_property(type, MemberCount);
+        if (count > 16384) return false;
         for (ulong i = 0; i < count; i++)
         {
             ReadMember(type, i, out IdaUdtMember member);

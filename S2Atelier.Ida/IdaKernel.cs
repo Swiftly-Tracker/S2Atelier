@@ -178,7 +178,8 @@ public static unsafe class IdaKernel
             bool runSchema = importSchemaPath != null && hl2SdkPath != null;
             bool runProtobufs = !string.IsNullOrEmpty(importProtobufsDir);
             int passCount = new[]
-                    { runInterfaces, runSchema, patchPlt, nameConVars, nameLogChannels, nameFnPtrTables, runProtobufs }
+                    { runInterfaces, runSchema, runInterfaces || runSchema, patchPlt, nameConVars, nameLogChannels,
+                      nameFnPtrTables, runProtobufs }
                 .Count(x => x);
             // Auto-analysis is only part of the job: the later passes can take minutes on large
             // binaries, so they share the rest of the bar instead of leaving it at 100%.
@@ -199,14 +200,40 @@ public static unsafe class IdaKernel
                 ? ValveInterfaceImport.Run(full, hl2SdkPath!)
                 : new ValveInterfaceImportResult(false);
 
+            // Both the schema pass and the interface step name slots from hl2sdk; one gate holds a drifted SDK
+            // class back in both and records the module's snapshot.
+            string module = Path.GetFileName(full);
+            module = module.EndsWith(".i64", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
+            VTableDrift? drift = vtableBaselineDirectory == null && vtableSnapshotDirectory == null
+                ? null
+                : new VTableDrift(module, vtableBaselineDirectory == null
+                    ? null
+                    : Path.Combine(vtableBaselineDirectory, VTableDrift.SnapshotName(module)));
+
             if (runSchema) BeginPass("schema");
             var schemaResult = runSchema
-                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject, vtableBaselineDirectory,
-                    vtableSnapshotDirectory)
+                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject, drift)
                 : new SchemaImportResult(false);
 
             if (runInterfaces || runSchema)
             {
+                // Classes that implement SDK interfaces, whether or not the module has schema classes.
+                BeginPass("interface vtables");
+                SdkInterfaceSummary implementations = SdkInterfaceBinding.Run(hl2SdkPath!, SchemaImport.DetectTargetPlatform(),
+                    schemaResult.SchemaClasses ?? new HashSet<string>(), drift, Console.Error.WriteLine);
+                Console.Error.WriteLine($"[interface-vtables] {Path.GetFileName(full)}: tables={implementations.Tables}, " +
+                    $"bound={implementations.Binding.Bound}, skipped={implementations.Binding.Skipped}, " +
+                    $"conflicts={implementations.Binding.Conflicts}.");
+                foreach (string held in drift?.Held ?? [])
+                {
+                    Console.Error.WriteLine($"[vtable-drift] {held}");
+                }
+
+                if (drift != null && vtableSnapshotDirectory != null)
+                {
+                    drift.Write(Path.Combine(vtableSnapshotDirectory, VTableDrift.SnapshotName(module)));
+                }
+
                 Console.Error.WriteLine($"[types] {TemplateAliases.Run()} template alias(es) created.");
                 // The imports parse with IDAClang; the later passes, like the GUI, use the legacy parser and
                 // reach template instantiations through the aliases.

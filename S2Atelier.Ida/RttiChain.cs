@@ -77,6 +77,44 @@ internal static unsafe class RttiChain
         return chain;
     }
 
+    /// <summary>
+    /// The complete class a table belongs to and the offset of the subobject it serves: 0 for a primary table,
+    /// the base's offset for a secondary one. Null when RTTI is unreadable.
+    /// </summary>
+    internal static (string Class, ulong Offset)? Owner(ulong addressPoint, VTableAbi abi)
+    {
+        if (addressPoint < 16 || !Mapped(addressPoint - 16, 16))
+        {
+            return null;
+        }
+
+        if (abi == VTableAbi.Itanium)
+        {
+            long offsetToTop = unchecked((long)IdaNative.get_qword(addressPoint - 16));
+            ulong typeInfo = IdaNative.get_qword(addressPoint - 8);
+            return offsetToTop <= 0 && Mapped(typeInfo, 16) && ItaniumName(IdaNative.get_qword(typeInfo + 8)) is string name
+                ? (name, (ulong)(-offsetToTop))
+                : null;
+        }
+
+        ulong locator = IdaNative.get_qword(addressPoint - 8);
+        if (!Mapped(locator, 24) || IdaNative.get_dword(locator) != 1)
+        {
+            return null;
+        }
+
+        uint self = IdaNative.get_dword(locator + 20);
+        if (self > locator)
+        {
+            return null;
+        }
+
+        ulong image = locator - self;
+        return MsvcName(image + IdaNative.get_dword(locator + 12)) is string owner
+            ? (owner, IdaNative.get_dword(locator + 4))
+            : null;
+    }
+
     // TypeDescriptor: vftable pointer, spare, then the decorated name ".?AVName@@".
     private static string? MsvcName(ulong typeDescriptor)
     {

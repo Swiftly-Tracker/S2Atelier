@@ -15,7 +15,8 @@ public sealed record SchemaImportResult(
     int FunctionsSkipped = 0,
     int FunctionConflicts = 0,
     int ClangErrors = 0, int VTableTypesCompleted = 0, int VTableAddressesBound = 0,
-    int VTableUnknownSlots = 0, int VTableConflicts = 0);
+    int VTableUnknownSlots = 0, int VTableConflicts = 0,
+    IReadOnlySet<string>? SchemaClasses = null);
 
 public sealed class SchemaImportException(string message, int clangErrors = 0) : Exception(message)
 {
@@ -44,13 +45,12 @@ public static unsafe class SchemaImport
     private const int StaFunctionArgumentType = 31;
     private static readonly IdaVTableMemory VTableMemory = new();
 
-    public static SchemaImportResult Run(
+    internal static SchemaImportResult Run(
         string binaryPath,
         string sdkJsonPath,
         string hl2SdkPath,
         string requestedProject,
-        string? vtableBaselineDirectory = null,
-        string? vtableSnapshotDirectory = null)
+        VTableDrift? drift = null)
     {
         var stageClock = Stopwatch.StartNew();
         void Stage(string name)
@@ -118,12 +118,8 @@ public static unsafe class SchemaImport
             Stage("SDK header load");
             // Tables whose slots moved since the previous build keep their SDK names back, here and in the
             // vtable types built from the same slots below.
-            string module = Path.GetFileName(binaryPath);
-            module = module.EndsWith(".i64", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
-            var drift = new VTableDrift(module, vtableBaselineDirectory == null
-                ? null
-                : Path.Combine(vtableBaselineDirectory, VTableDrift.SnapshotName(module)));
-            var slots = drift.Filter(scan.Tables, sdk.Resolve(scan.Tables, selection));
+            var resolved = sdk.Resolve(scan.Tables, selection);
+            var slots = drift == null ? resolved : drift.Filter(scan.Tables, resolved);
             Stage("SDK prototype resolution");
             VTableBindingSummary sdkBinding = SdkFunctionBinding.Bind(scan.Tables, slots,
                 scan.PureCallAddresses, scan.UnresolvedThisAddresses, Console.Error.WriteLine);
@@ -140,18 +136,6 @@ public static unsafe class SchemaImport
             var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
                 sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts, fallback.Named);
             Stage("fallback function binding");
-            SdkInterfaceSummary interfaces = SdkInterfaceBinding.Run(hl2SdkPath, platform, selection,
-                scan.PureCallAddresses, drift, Console.Error.WriteLine);
-            Stage("SDK interface binding");
-            foreach (string held in drift.Held)
-            {
-                Console.Error.WriteLine($"[vtable-drift] {held}");
-            }
-
-            if (vtableSnapshotDirectory != null)
-            {
-                drift.Write(Path.Combine(vtableSnapshotDirectory, VTableDrift.SnapshotName(module)));
-            }
             var constructorDiagnostics = new LimitedDiagnostics(32);
             ConstructorNamingSummary constructors = ConstructorNaming.Apply(selection, platform, constructorDiagnostics);
             constructorDiagnostics.Finish();
@@ -168,15 +152,15 @@ public static unsafe class SchemaImport
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
                 $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
                 $"conflicts={binding.Conflicts}, slot-names={binding.Named}, " +
-                $"interface-tables={interfaces.Tables}, interface-bound={interfaces.Binding.Bound}, " +
-                $"drifted-tables={drift.Held.Count}, " +
+
                 $"constructors={constructors.Found}, constructors-named={constructors.Named}, " +
                 $"argument-candidates={arguments.Candidates}, arguments-typed={arguments.Typed}, " +
                 $"arguments-without-common-base={arguments.NoCommonBase}, clang-errors={clangErrors}" +
                 (clangErrors == 0 ? "." : " (ignored; valid declarations were imported)."));
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
                 binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
-                types.Completed, types.Bound, types.UnknownSlots, types.Conflicts);
+                types.Completed, types.Bound, types.UnknownSlots, types.Conflicts,
+                selection.Classes.Keys.ToHashSet(StringComparer.Ordinal));
         }
         finally
         {

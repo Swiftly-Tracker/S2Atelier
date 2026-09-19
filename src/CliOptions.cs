@@ -225,9 +225,9 @@ internal sealed class CliOptions
             error = "--schema-project requires --import-schema.";
             return false;
         }
-        if (ImportSchemaPath == null && (VTableBaselineDirectory != null || VTableSnapshotDirectory != null))
+        if (Hl2SdkPath == null && (VTableBaselineDirectory != null || VTableSnapshotDirectory != null))
         {
-            error = "--vtable-baseline and --vtable-snapshot require --import-schema.";
+            error = "--vtable-baseline and --vtable-snapshot require --hl2sdk.";
             return false;
         }
         if (VTableBaselineDirectory != null && !Directory.Exists(VTableBaselineDirectory))

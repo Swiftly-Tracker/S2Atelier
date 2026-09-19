@@ -8,15 +8,21 @@ namespace S2Atelier.Ida;
 internal sealed record SdkInterfaceSummary(int Tables, VTableBindingSummary Binding);
 
 /// <summary>
-/// Binds the vtables of classes sdk.json does not describe but whose primary base chain reaches a class hl2sdk
-/// declares, such as CSource2Server implementing ISource2Server. The declared class's methods are the primary
-/// table's first slots in declaration order; they are named after the implementing class
-/// (CSource2Server::GameInit) and typed with the declared class as this.
+/// Binds the vtables of classes sdk.json does not describe that implement a class hl2sdk declares. Two routes
+/// find them: a class whose primary base chain reaches a declared class (CSource2Server implementing
+/// ISource2Server), and every interface the module exports under an interfaces.h version string, whose
+/// registered object may well be a secondary base (CCSGameConfiguration + 8 is its ISource2ServerConfig). The
+/// declared class's methods are the table's first slots in declaration order; they are named after the
+/// implementing class (CSource2Server::GameInit) and typed with the declared class as this.
 /// </summary>
 internal static unsafe partial class SdkInterfaceBinding
 {
-    internal static SdkInterfaceSummary Run(string hl2SdkPath, SchemaTargetPlatform platform, SchemaSelection selection,
-        IReadOnlySet<ulong> pureCalls, VTableDrift drift, Action<string> diagnostic)
+    private const int MaxSetupInsns = 8;
+    private const ulong MaxCreateSize = 0x40;
+
+    /// <param name="schemaClasses">Classes the schema pass binds itself, left alone here.</param>
+    internal static SdkInterfaceSummary Run(string hl2SdkPath, SchemaTargetPlatform platform,
+        IReadOnlySet<string> schemaClasses, VTableDrift? drift, Action<string> diagnostic)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
         void Stage(string name)
@@ -44,12 +50,12 @@ internal static unsafe partial class SdkInterfaceBinding
                 : declared[name] = ValveInterfaceCatalog.FindDefinitionHeader(name, headers) != null;
         }
 
-        var tables = new List<SchemaVTable>();
-        var seen = new HashSet<ulong>();
-        foreach ((ulong addressPoint, IReadOnlyList<ulong> functions, VTableAbi abi) in PrimaryTables(platform))
+        var image = new Image();
+        var tables = new Dictionary<ulong, SchemaVTable>();
+        foreach ((ulong addressPoint, IReadOnlyList<ulong> functions, VTableAbi abi) in image.PrimaryTables(platform))
         {
             IReadOnlyList<string> chain = RttiChain.Read(addressPoint, abi);
-            if (chain.Count == 0 || selection.Classes.ContainsKey(chain[0]) || !seen.Add(addressPoint))
+            if (chain.Count == 0 || schemaClasses.Contains(chain[0]))
             {
                 continue;
             }
@@ -57,94 +63,272 @@ internal static unsafe partial class SdkInterfaceBinding
             // The most derived declared class: everything above it in the chain shares its first slots.
             if (chain.FirstOrDefault(Declared) is string sdkClass)
             {
-                tables.Add(new SchemaVTable(chain[0], addressPoint, 0, sdkClass, [], functions));
+                tables.TryAdd(addressPoint, new SchemaVTable(chain[0], addressPoint, 0, sdkClass, [], functions));
             }
         }
 
-        Stage("discovery");
+        int registered = 0;
+        var abiOfModule = platform == SchemaTargetPlatform.WindowsMsvc ? VTableAbi.Msvc : VTableAbi.Itanium;
+        foreach ((string sdkClass, ulong addressPoint) in image.ExportedInterfaces(ValveInterfaceCatalog.Load(hl2SdkPath), Declared))
+        {
+            if (tables.ContainsKey(addressPoint) || RttiChain.Owner(addressPoint, abiOfModule) is not (string owner, ulong offset) ||
+                schemaClasses.Contains(owner))
+            {
+                continue;
+            }
+
+            var functions = image.Slots(addressPoint);
+            if (functions.Count > 0)
+            {
+                tables[addressPoint] = new SchemaVTable(owner, addressPoint, offset, sdkClass, [], functions);
+                registered++;
+            }
+        }
+
+        Stage($"discovery ({registered} exported interface table(s) beyond the base chains)");
         if (tables.Count == 0)
         {
             return new(0, new(0, 0, 0));
         }
 
-        using var sdk = Hl2SdkVTables.LoadClasses(hl2SdkPath, platform, tables.Select(x => x.ThisType!), diagnostic, headers);
+        var list = tables.Values.ToList();
+        using var sdk = Hl2SdkVTables.LoadClasses(hl2SdkPath, platform, list.Select(x => x.ThisType!), diagnostic, headers);
         Stage("SDK header load");
-        var slots = drift.Filter(tables, sdk.ResolveDeclared(tables));
+        var resolved = sdk.ResolveDeclared(list);
+        var slots = drift == null ? resolved : drift.Filter(list, resolved);
         Stage("SDK prototype resolution");
-        var bound = SdkFunctionBinding.Bind(tables, slots, pureCalls, new HashSet<ulong>(), diagnostic, nameByClass: true);
+        // A pure-call slot points at a function that never returns (it aborts); it is not the method.
+        var pureCalls = list.SelectMany(x => x.Functions)
+            .Where(x => IdaNative.get_func(x) != null && IdaNative.func_does_return(x) == 0).ToHashSet();
+        var bound = SdkFunctionBinding.Bind(list, slots, pureCalls, new HashSet<ulong>(), diagnostic, nameByClass: true);
         Stage("binding");
-        return new(tables.Count, bound);
+        return new(list.Count, bound);
     }
 
-    /// <summary>
-    /// Every class's table at offset 0. MSVC tables are found through their RTTI locators, since IDA does not
-    /// name every vftable; Itanium ones through their symbols, the first group being the primary table.
-    /// </summary>
-    private static List<(ulong AddressPoint, IReadOnlyList<ulong> Functions, VTableAbi Abi)> PrimaryTables(
-        SchemaTargetPlatform platform)
+    [GeneratedRegex(@"[A-Za-z_][A-Za-z0-9_]*", RegexOptions.CultureInvariant)]
+    private static partial Regex Identifier();
+
+    private sealed class Image
     {
-        var tables = new List<(ulong, IReadOnlyList<ulong>, VTableAbi)>();
-        var names = new List<(ulong Address, string Name)>();
-        for (nuint i = 0, count = IdaNative.get_nlist_size(); i < count; i++)
+        private readonly List<(ulong Address, string Name)> _names = [];
+        private readonly SortedSet<ulong> _boundaries;
+        private readonly Memory _memory = new();
+
+        internal Image()
         {
-            byte* raw = IdaNative.get_nlist_name(i);
-            if (raw != null)
+            for (nuint i = 0, count = IdaNative.get_nlist_size(); i < count; i++)
             {
-                names.Add((IdaNative.get_nlist_ea(i), Marshal.PtrToStringUTF8((nint)raw) ?? string.Empty));
+                byte* raw = IdaNative.get_nlist_name(i);
+                if (raw != null)
+                {
+                    _names.Add((IdaNative.get_nlist_ea(i), Marshal.PtrToStringUTF8((nint)raw) ?? string.Empty));
+                }
             }
+
+            _boundaries = new SortedSet<ulong>(_names.Select(x => x.Address));
         }
 
-        var boundaries = new SortedSet<ulong>(names.Select(x => x.Address));
-        var memory = new Memory();
-        ulong? End(ulong address)
+        private ulong? End(ulong address)
         {
-            ulong next = boundaries.GetViewBetween(address + 1, ulong.MaxValue).FirstOrDefault();
+            ulong next = _boundaries.GetViewBetween(address + 1, ulong.MaxValue).FirstOrDefault();
             return next == 0 ? null : next;
         }
 
-        if (platform == SchemaTargetPlatform.WindowsMsvc)
-        {
-            foreach ((ulong locator, string name) in names)
-            {
-                // RTTICompleteObjectLocator; its offset field is 0 for a class's primary table.
-                if (!name.StartsWith("??_R4", StringComparison.Ordinal) || IdaNative.get_dword(locator + 4) != 0)
-                {
-                    continue;
-                }
+        // The function pointers from an address point up to the next named address or non-function.
+        internal IReadOnlyList<ulong> Slots(ulong addressPoint)
+            => VTableEntryScanner.ScanMsvc(_memory, addressPoint, endExclusive: End(addressPoint));
 
-                foreach (ulong slot in Xrefs.DataTo(locator))
+        /// <summary>
+        /// Every class's table at offset 0. MSVC tables are found through their RTTI locators, since IDA does
+        /// not name every vftable; Itanium ones through their symbols, the first group being the primary table.
+        /// </summary>
+        internal List<(ulong AddressPoint, IReadOnlyList<ulong> Functions, VTableAbi Abi)> PrimaryTables(
+            SchemaTargetPlatform platform)
+        {
+            var tables = new List<(ulong, IReadOnlyList<ulong>, VTableAbi)>();
+            if (platform == SchemaTargetPlatform.WindowsMsvc)
+            {
+                foreach ((ulong locator, string name) in _names)
                 {
-                    if (IdaNative.get_qword(slot) != locator)
+                    // RTTICompleteObjectLocator; its offset field is 0 for a class's primary table.
+                    if (!name.StartsWith("??_R4", StringComparison.Ordinal) || IdaNative.get_dword(locator + 4) != 0)
                     {
                         continue;
                     }
 
-                    var functions = VTableEntryScanner.ScanMsvc(memory, slot + 8, endExclusive: End(slot + 8));
-                    if (functions.Count > 0)
+                    foreach (ulong slot in Xrefs.DataTo(locator))
                     {
-                        tables.Add((slot + 8, functions, VTableAbi.Msvc));
+                        if (IdaNative.get_qword(slot) == locator && Slots(slot + 8) is { Count: > 0 } functions)
+                        {
+                            tables.Add((slot + 8, functions, VTableAbi.Msvc));
+                        }
                     }
+                }
+
+                return tables;
+            }
+
+            foreach ((ulong address, string name) in _names)
+            {
+                if (name.StartsWith("_ZTV", StringComparison.Ordinal) &&
+                    VTableEntryScanner.ScanItaniumTables(_memory, address, endExclusive: End(address))
+                        .FirstOrDefault(x => x.OffsetToTop == 0 && x.Functions.Count > 0) is VTableSlice primary)
+                {
+                    tables.Add((primary.AddressPoint, primary.Functions, VTableAbi.Itanium));
                 }
             }
 
             return tables;
         }
 
-        foreach ((ulong address, string name) in names)
+        /// <summary>
+        /// The interfaces the module exports: an EXPOSE_INTERFACE registration passes the version string and a
+        /// create function, which returns the exported (sub)object; a static initializer stores that object's
+        /// vtable. Yields the declared interface class with the table's address point.
+        /// </summary>
+        internal List<(string SdkClass, ulong AddressPoint)> ExportedInterfaces(ValveInterfaceCatalog catalog,
+            Func<string, bool> declared)
         {
-            if (name.StartsWith("_ZTV", StringComparison.Ordinal) &&
-                VTableEntryScanner.ScanItaniumTables(memory, address, endExclusive: End(address))
-                    .FirstOrDefault(x => x.OffsetToTop == 0 && x.Functions.Count > 0) is VTableSlice primary)
+            var found = new List<(string, ulong)>();
+            var versions = catalog.Entries.Where(x => declared(x.ClassName))
+                .GroupBy(x => x.Version, StringComparer.Ordinal)
+                .ToDictionary(x => x.Key, x => x.First().ClassName, StringComparer.Ordinal);
+            int[] regs = ConVarNaming.ArgumentRegisters();
+            byte* buf = stackalloc byte[Insn.BufferSize];
+            foreach ((ulong text, string version) in Strings(versions.Keys))
             {
-                tables.Add((primary.AddressPoint, primary.Functions, VTableAbi.Itanium));
+                foreach (ulong use in Xrefs.DataTo(text))
+                {
+                    ulong function = FunctionStart(use);
+                    if (function == ulong.MaxValue || NextTransfer(use, buf) is not ulong call ||
+                        !ConVarTypeRecovery.ArgSetup(call, function, regs[1], out ulong create, out bool isAddress) ||
+                        !isAddress || ReturnedAddress(create, buf) is not ulong exported ||
+                        StoredTable(exported, buf) is not ulong table)
+                    {
+                        continue;
+                    }
+
+                    found.Add((versions[version], table));
+                }
             }
+
+            return found;
         }
 
-        return tables;
-    }
+        // The call or tail jump the registration arguments are set up for.
+        private static ulong? NextTransfer(ulong ea, byte* buf)
+        {
+            ulong end = FunctionEnd(ea);
+            for (int i = 0; i < MaxSetupInsns; i++)
+            {
+                ea = IdaNative.next_head(ea, end);
+                if (ea == ulong.MaxValue || !Insn.TryDecode(ea, buf))
+                {
+                    return null;
+                }
 
-    [GeneratedRegex(@"[A-Za-z_][A-Za-z0-9_]*", RegexOptions.CultureInvariant)]
-    private static partial Regex Identifier();
+                if (Insn.IsCall(buf) || Mnemonic(ea) == "jmp")
+                {
+                    return ea;
+                }
+            }
+
+            return null;
+        }
+
+        // A create function of EXPOSE_SINGLE_INTERFACE: return &g_Object (or the interface's subobject of it).
+        private static ulong? ReturnedAddress(ulong function, byte* buf)
+        {
+            void* pfn = IdaNative.get_func(function);
+            if (pfn == null || *(ulong*)pfn != function || *((ulong*)pfn + 1) - function > MaxCreateSize)
+            {
+                return null;
+            }
+
+            ulong end = *((ulong*)pfn + 1);
+            ulong? returned = null;
+            for (ulong ea = function; ea < end && ea != ulong.MaxValue; ea = IdaNative.next_head(ea, end))
+            {
+                if (Insn.TryDecode(ea, buf) && Mnemonic(ea) == "lea" && Insn.OpType(buf, 0) == Insn.OpReg &&
+                    Insn.OpRegister(buf, 0) == 0 && Insn.OpType(buf, 1) == Insn.OpMem)
+                {
+                    returned = Insn.OpAddr(buf, 1);
+                }
+            }
+
+            return returned;
+        }
+
+        // The vtable a static initializer stores at the object: mov [object], reg, the register loaded with it.
+        private static ulong? StoredTable(ulong exported, byte* buf)
+        {
+            foreach (ulong use in Xrefs.DataTo(exported))
+            {
+                ulong function = FunctionStart(use);
+                if (function == ulong.MaxValue || !Insn.TryDecode(use, buf) || Mnemonic(use) != "mov" ||
+                    Insn.OpType(buf, 0) != Insn.OpMem || Insn.OpAddr(buf, 0) != exported || Insn.OpType(buf, 1) != Insn.OpReg)
+                {
+                    continue;
+                }
+
+                if (ConVarTypeRecovery.ArgSetup(use, function, Insn.OpRegister(buf, 1), out ulong table, out bool isAddress) &&
+                    isAddress)
+                {
+                    return table;
+                }
+            }
+
+            return null;
+        }
+
+        // String literals among the wanted texts, with their addresses.
+        private static List<(ulong Address, string Text)> Strings(IEnumerable<string> wanted)
+        {
+            var set = wanted.ToHashSet(StringComparer.Ordinal);
+            var found = new List<(ulong, string)>();
+            byte* item = stackalloc byte[32];
+            for (nuint i = 0, count = IdaNative.get_strlist_qty(); i < count; i++)
+            {
+                if (IdaNative.get_strlist_item(item, i) == 0)
+                {
+                    continue;
+                }
+
+                ulong ea = *(ulong*)item;
+                var text = new QString();
+                try
+                {
+                    if (IdaNative.get_strlit_contents(&text, ea, (nuint)(*(int*)(item + 8)), *(int*)(item + 12), null, 0) > 0 &&
+                        text.Read() is string value && set.Contains(value))
+                    {
+                        found.Add((ea, value));
+                    }
+                }
+                finally { text.Dispose(); }
+            }
+
+            return found;
+        }
+
+        private static string Mnemonic(ulong ea)
+        {
+            var text = new QString();
+            try { return IdaNative.print_insn_mnem(&text, ea) > 0 ? text.Read() : string.Empty; }
+            finally { text.Dispose(); }
+        }
+
+        private static ulong FunctionStart(ulong ea)
+        {
+            void* function = IdaNative.get_func(ea);
+            return function == null ? ulong.MaxValue : *(ulong*)function;
+        }
+
+        private static ulong FunctionEnd(ulong ea)
+        {
+            void* function = IdaNative.get_func(ea);
+            return function == null ? ulong.MaxValue : *((ulong*)function + 1);
+        }
+    }
 
     private sealed class Memory : IVTableMemory
     {

@@ -423,12 +423,12 @@ public static class Entrypoint
                                   tables through IDAClang. Requires --hl2sdk; sdk.json is not needed.
               --hl2sdk <dir>      HL2SDK root used by --import-interfaces and/or --import-schema.
               --vtable-baseline <dir>
-                                  With --import-schema, compare the SDK-named vtables with the previous
+                                  With --hl2sdk, compare the SDK-named vtables with the previous
                                   build's snapshot (<dir>/<binary>.vtables.json). A class whose slots moved
                                   so the SDK would rename a known function keeps its SDK names back; its
                                   vtable is commented and it is reported until the SDK agrees again.
               --vtable-snapshot <dir>
-                                  With --import-schema, write this build's snapshot to <dir>, the baseline
+                                  With --hl2sdk, write this build's snapshot to <dir>, the baseline
                                   of the next build.
               --schema-project <auto|project>
                                   Project roots to import. Default auto derives client/server/etc.
