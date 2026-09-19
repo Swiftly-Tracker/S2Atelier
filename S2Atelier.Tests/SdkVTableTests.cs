@@ -29,6 +29,26 @@ internal static class SdkVTableTests
             ["Shutdown", "Init", "Save", "Save", "Load"]).Count == 0, "repeated and missing fingerprints ignored");
     }
 
+    internal static void SlotOwners()
+    {
+        // CDerived : CMiddle : CBase, and CUnrelated sharing a folded body with CBase.
+        var chains = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["CBase"] = ["CBase"],
+            ["CMiddle"] = ["CMiddle", "CBase"],
+            ["CDerived"] = ["CDerived", "CMiddle", "CBase"],
+            ["CUnrelated"] = ["CUnrelated"],
+        };
+
+        Check(VTableSlotNaming.Owner(["CDerived"], chains) == "CDerived", "one class owns its own slot");
+        Check(VTableSlotNaming.Owner(["CDerived", "CMiddle", "CBase"], chains) == "CBase",
+            "an inherited implementation belongs to the least derived class");
+        Check(VTableSlotNaming.Owner(["CDerived", "CMiddle"], chains) == "CMiddle",
+            "the base that does not hold the function is not chosen");
+        Check(VTableSlotNaming.Owner(["CBase", "CUnrelated"], chains) == null, "a folded body has no owner");
+        Check(VTableSlotNaming.Owner(["CDerived", "CUnknown"], chains) == null, "a class without RTTI bases decides nothing");
+    }
+
     internal static void Managed()
     {
         var classes = new[] { Class("Base"), Class("Other"), Class("Derived", "Base", "Other") }.ToDictionary(x => x.Name);

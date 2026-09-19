@@ -108,7 +108,7 @@ internal static unsafe partial class SdkInterfaceBinding
     [GeneratedRegex(@"[A-Za-z_][A-Za-z0-9_]*", RegexOptions.CultureInvariant)]
     private static partial Regex Identifier();
 
-    private sealed class Image
+    internal sealed class Image
     {
         private readonly List<(ulong Address, string Name)> _names = [];
         private readonly SortedSet<ulong> _boundaries;
@@ -137,6 +137,53 @@ internal static unsafe partial class SdkInterfaceBinding
         // The function pointers from an address point up to the next named address or non-function.
         internal IReadOnlyList<ulong> Slots(ulong addressPoint)
             => VTableEntryScanner.ScanMsvc(_memory, addressPoint, endExclusive: End(addressPoint));
+
+        /// <summary>
+        /// Every vtable RTTI describes, primary and secondary, with its address point. The caller reads the
+        /// class and the subobject offset back from the RTTI at the address point.
+        /// </summary>
+        internal List<(ulong AddressPoint, IReadOnlyList<ulong> Functions)> AllTables(SchemaTargetPlatform platform)
+        {
+            var tables = new List<(ulong, IReadOnlyList<ulong>)>();
+            if (platform == SchemaTargetPlatform.WindowsMsvc)
+            {
+                foreach ((ulong locator, string name) in _names)
+                {
+                    if (!name.StartsWith("??_R4", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    foreach (ulong slot in Xrefs.DataTo(locator))
+                    {
+                        if (IdaNative.get_qword(slot) == locator && Slots(slot + 8) is { Count: > 0 } functions)
+                        {
+                            tables.Add((slot + 8, functions));
+                        }
+                    }
+                }
+
+                return tables;
+            }
+
+            foreach ((ulong address, string name) in _names)
+            {
+                if (!name.StartsWith("_ZTV", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (VTableSlice slice in VTableEntryScanner.ScanItaniumTables(_memory, address, endExclusive: End(address)))
+                {
+                    if (slice.Functions.Count > 0)
+                    {
+                        tables.Add((slice.AddressPoint, slice.Functions));
+                    }
+                }
+            }
+
+            return tables;
+        }
 
         /// <summary>
         /// Every class's table at offset 0. MSVC tables are found through their RTTI locators, since IDA does

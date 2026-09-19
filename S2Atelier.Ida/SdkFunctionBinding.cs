@@ -188,6 +188,8 @@ internal static unsafe class SdkFunctionBinding
         return owners.All(owner => owner == selected || isZeroOffsetBase(owner!, selected)) ? selected : null;
     }
 
+    internal static SdkFunctionOwnership? OwnershipAt(ulong address) => ReadOwnership(ReadComment(address));
+
     internal static bool CanUpdateName(string name, SdkFunctionOwnership? ownership)
         => ownership?.Name is string applied ? applied == name : ValveInterfaceNaming.CanReplace(name);
 

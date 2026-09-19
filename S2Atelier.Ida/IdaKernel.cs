@@ -234,6 +234,11 @@ public static unsafe class IdaKernel
                     drift.Write(Path.Combine(vtableSnapshotDirectory, VTableDrift.SnapshotName(module)));
                 }
 
+                // Whatever the SDK does not name keeps a slot name of its own, in every class's vtable.
+                var namedSlots = VTableSlotNaming.Run(SchemaImport.DetectTargetPlatform(), Console.Error.WriteLine);
+                Console.Error.WriteLine($"[vtable-slots] {Path.GetFileName(full)}: tables={namedSlots.Tables}, " +
+                    $"named={namedSlots.Named}, ambiguous={namedSlots.Ambiguous}.");
+
                 Console.Error.WriteLine($"[types] {TemplateAliases.Run()} template alias(es) created.");
                 // The imports parse with IDAClang; the later passes, like the GUI, use the legacy parser and
                 // reach template instantiations through the aliases.
