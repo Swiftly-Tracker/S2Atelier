@@ -210,10 +210,6 @@ public static unsafe class ValveInterfaceImport
         try
         {
             Directory.CreateDirectory(tempDirectory);
-            // Current HL2SDK snapshots reference this generated protobuf header from eiface.h,
-            // but the interface declarations only use separately forward-declared message types.
-            File.WriteAllText(Path.Combine(tempDirectory, "network_connection.pb.h"),
-                "#pragma once\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             SchemaImport.ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: true, tempDirectory);
 
             int groupIndex = 0;
@@ -356,18 +352,31 @@ public static unsafe class ValveInterfaceImport
         // Declare SDK pointer-only dependencies in the translation unit before
         // IDAClang can resolve their names from previously imported Local Types.
         output.AppendLine("struct InputContextHandle_t__;");
-        // protobuf enums use a 32-bit integer ABI; only the type is needed here.
-        output.AppendLine("typedef int ENetworkDisconnectionReason;");
+        // Several interfaces take ENetworkDisconnectionReason. SchemaImport.ConfigureClang always
+        // provides this header: compiled from the SDK's .proto, or a stub typedef without protoc.
+        output.AppendLine("#include \"network_connection.pb.h\"");
         // The generated CCLCMsg_Move definition is absent from this SDK snapshot.
         // Keep its wrapper opaque: instantiating CNetMessagePB would require the
         // protobuf base layout, while the interface only takes a const reference.
         output.AppendLine("class CCLCMsg_Move;");
         output.AppendLine("template <typename T> class CNetMessagePB;");
         output.AppendLine("template <> class CNetMessagePB<CCLCMsg_Move>;");
+        foreach (string declaration in Schema.SchemaHeaderGenerator.OpaqueSdkSpecializations)
+        {
+            output.AppendLine(declaration);
+        }
         foreach (string include in includes.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             output.Append("#include \"").Append(include.Replace('\\', '/')).AppendLine("\"");
         }
+        // Convar globals are typed by the convar pass, which can run without the schema import.
+        output.AppendLine("#if __has_include(\"tier1/convar.h\")");
+        output.AppendLine("#include \"tier1/convar.h\"");
+        foreach (string declaration in Schema.SchemaHeaderGenerator.ConVarInstantiations())
+        {
+            output.AppendLine(declaration);
+        }
+        output.AppendLine("#endif");
         int index = 0;
         foreach (ValveInterfaceDefinition definition in definitions.Distinct())
         {

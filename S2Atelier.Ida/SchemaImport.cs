@@ -35,6 +35,9 @@ public static unsafe class SchemaImport
     private const int PtVariable = 0x00000008;
     private const int PtHigh = 0x00000080;
     private const uint TinfoDefinite = 0x0001;
+    private const uint TinfoGuessed = 0x0000;
+    // AFL_USERTI: the prototype was set by a user or applied as definite.
+    private const uint UserTypeFlag = 0x02000000;
     // tinfo_t::gta_prop_t and sta_prop_t are stable across the supported IDA SDK 9.2/9.3.
     private const int GtaFunctionArgumentCount = 23;
     private const int StaFunctionArgumentName = 30;
@@ -73,10 +76,6 @@ public static unsafe class SchemaImport
         {
             Directory.CreateDirectory(tempDirectory);
             File.WriteAllText(tempHeader, header.Text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            // Current HL2SDK snapshots include this generated protobuf header unconditionally,
-            // although schema layout only needs the replacement enum emitted by our preamble.
-            File.WriteAllText(Path.Combine(tempDirectory, "network_connection.pb.h"),
-                "#pragma once\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             ConfigureClang(hl2SdkPath, platform, skipLayoutAssertions: false, tempDirectory);
             int preflightErrors = ParseHeader(tempHeader, testOnly: true, printDiagnostics: true);
             if (preflightErrors != 0)
@@ -130,15 +129,27 @@ public static unsafe class SchemaImport
                 UnresolvedThisAddresses = scan.UnresolvedThisAddresses.Except(sdkAddresses).ToHashSet(),
             }, selection);
             var binding = new VTableBindingSummary(sdkBinding.Bound + fallback.Bound,
-                sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts);
+                sdkBinding.Skipped + fallback.Skipped, sdkBinding.Conflicts + fallback.Conflicts, fallback.Named);
             Stage("fallback function binding");
+            var constructorDiagnostics = new LimitedDiagnostics(32);
+            ConstructorNamingSummary constructors = ConstructorNaming.Apply(selection, platform, constructorDiagnostics);
+            constructorDiagnostics.Finish();
+            Stage("constructor naming");
+            var argumentDiagnostics = new LimitedDiagnostics(32);
+            ArgumentPropagationSummary arguments =
+                ArgumentPropagation.Run(ConVarNaming.ArgumentRegisters(), argumentDiagnostics);
+            argumentDiagnostics.Finish();
+            Stage("argument propagation");
             VTableTypeSummary types = VTableTypeBinder.Bind(scan.Tables, new SchemaVTableTypes(Console.Error.WriteLine, slots));
             Stage("vtable type binding");
             Console.Error.WriteLine(
                 $"[schema] {Path.GetFileName(binaryPath)}: project={selection.Project}, types={importedTypes}, " +
                 $"vtables-found={scan.MatchedVTables}, vtable-types={types.Completed}, vtable-addresses-bound={types.Bound}, " +
                 $"unknown-slots={types.UnknownSlots}, vtable-conflicts={types.Conflicts}, bound={binding.Bound}, skipped={binding.Skipped}, " +
-                $"conflicts={binding.Conflicts}, clang-errors={clangErrors}" +
+                $"conflicts={binding.Conflicts}, slot-names={binding.Named}, " +
+                $"constructors={constructors.Found}, constructors-named={constructors.Named}, " +
+                $"argument-candidates={arguments.Candidates}, arguments-typed={arguments.Typed}, " +
+                $"arguments-without-common-base={arguments.NoCommonBase}, clang-errors={clangErrors}" +
                 (clangErrors == 0 ? "." : " (ignored; valid declarations were imported)."));
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
                 binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
@@ -226,6 +237,9 @@ public static unsafe class SchemaImport
         var arguments = new List<string>
         {
             "-x", "c++", "-std=c++17", "-U__tuple", "-frtti", "-ferror-limit=100", "-Wno-c++11-narrowing", "-Wno-invalid-offsetof",
+            // Layout assertions name private SDK members. "#define private public" cannot reach headers
+            // that the leading includes already pulled in (e.g. entityidentity.h via eiface.h).
+            "-fno-access-control",
         };
         if (skipLayoutAssertions)
         {
@@ -253,6 +267,14 @@ public static unsafe class SchemaImport
             ]);
         }
         if (generatedIncludeDirectory != null) arguments.Add("-I" + QuoteArgument(generatedIncludeDirectory));
+        // eiface.h/igameevents.h declare interface methods that pass CNetMessagePB<T> (see
+        // netmessage.h) for a couple of protobuf message types, by value of the template's base.
+        // hl2sdk ships only the .proto source for those, not compiled headers, so without this
+        // T is incomplete at the point those declarations need it. Compile the small, fixed set
+        // this SDK actually references with the SDK's own protoc (it patches codegen to drop
+        // "final" from message classes - CNetMessagePB<T> inherits T, which a stock protoc's
+        // "final" would make illegal - so a generic protoc release is not a substitute).
+        arguments.Add("-I" + QuoteArgument(NetworkProtobufHeaders(hl2SdkPath)));
         foreach (string directory in includeDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             arguments.Add("-I" + QuoteArgument(directory));
@@ -293,6 +315,148 @@ public static unsafe class SchemaImport
             Utf8.Free(nativeArgv);
             Utf8.Free(parser);
         }
+    }
+
+    // IDA saves the selected source parser and its arguments in the database, and the GUI parses every
+    // declaration the user types (e.g. a variable type in the decompiler) with them. ConfigureClang
+    // points IDAClang at temporary headers and layout-only macros, which break those declarations, so
+    // every saved database ends with IDAClang's arguments cleared and the legacy parser selected.
+    internal static void ResetParser()
+    {
+        byte* clang = Utf8.Allocate("clang");
+        byte* empty = Utf8.Allocate(string.Empty);
+        byte* legacy = Utf8.Allocate("legacy");
+        try
+        {
+            IdaNative.set_parser_argv(clang, empty);
+            // Selecting "legacy" by name stores it explicitly; the documented empty name reports
+            // success in IDA 9.3 but leaves the current parser selected.
+            IdaNative.select_parser_by_name(legacy);
+        }
+        finally
+        {
+            Utf8.Free(legacy);
+            Utf8.Free(empty);
+            Utf8.Free(clang);
+        }
+
+        // get_selected_parser_name reports the legacy parser as an empty name.
+        QString name = default;
+        try
+        {
+            if (IdaNative.get_selected_parser_name(&name) != 0 && name.Read().Length != 0)
+            {
+                Console.Error.WriteLine($"[clang] could not select the legacy source parser; '{name.Read()}' remains selected.");
+            }
+        }
+        finally
+        {
+            name.Dispose();
+        }
+    }
+
+    // (source .proto path relative to hl2SdkPath, in dependency order so a single protoc
+    // invocation can compile all of them - protoc only emits output for files listed explicitly).
+    private static readonly string[] NetworkProtoSources =
+    [
+        Path.Combine("common", "networkbasetypes.proto"),
+        Path.Combine("common", "valveextensions.proto"),
+        Path.Combine("common", "network_connection.proto"),
+        Path.Combine("common", "source2_steam_stats.proto"),
+        Path.Combine("common", "netmessages.proto"),
+        Path.Combine("game", "shared", "gameevents.proto"),
+    ];
+
+    // One compile per hl2SdkPath for the process lifetime: an IDA worker analyzes many binaries
+    // against the same SDK, and protoc's own startup cost dwarfs compiling these six small files.
+    private static readonly Dictionary<string, string?> NetworkProtobufDirectoryCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object NetworkProtobufDirectoryLock = new();
+
+    private static string NetworkProtobufHeaders(string hl2SdkPath)
+    {
+        lock (NetworkProtobufDirectoryLock)
+        {
+            if (NetworkProtobufDirectoryCache.TryGetValue(hl2SdkPath, out string? cached))
+            {
+                return cached ?? NetworkProtobufFallbackStub();
+            }
+            string? compiled = CompileNetworkProtobufHeaders(hl2SdkPath);
+            NetworkProtobufDirectoryCache[hl2SdkPath] = compiled;
+            return compiled ?? NetworkProtobufFallbackStub();
+        }
+    }
+
+    private static string? CompileNetworkProtobufHeaders(string hl2SdkPath)
+    {
+        string protoc = Path.Combine(hl2SdkPath, "devtools", "bin",
+            OperatingSystem.IsWindows() ? "protoc.exe" : Path.Combine("linux", "protoc"));
+        string[] sources = NetworkProtoSources.Select(x => Path.Combine(hl2SdkPath, x)).ToArray();
+        if (!File.Exists(protoc) || sources.Any(x => !File.Exists(x)))
+        {
+            return null;
+        }
+
+        string directory = Path.Combine(Path.GetTempPath(), "s2atelier-sdk-protos-" +
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(hl2SdkPath)))[..16]);
+        string marker = Path.Combine(directory, "netmessages.pb.h");
+        // Content is fully determined by hl2SdkPath's own checked-in .proto files; a prior
+        // compile in this or an earlier process is already correct, and workers share this cache.
+        if (File.Exists(marker))
+        {
+            return directory;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var info = new ProcessStartInfo(protoc)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            info.ArgumentList.Add("-I" + Path.Combine(hl2SdkPath, "common"));
+            info.ArgumentList.Add("-I" + Path.Combine(hl2SdkPath, "game", "shared"));
+            info.ArgumentList.Add("-I" + Path.Combine(hl2SdkPath, "thirdparty", "protobuf-3.21.8", "src"));
+            info.ArgumentList.Add("--cpp_out=" + directory);
+            foreach (string source in sources) info.ArgumentList.Add(source);
+
+            using Process? process = Process.Start(info);
+            if (process == null)
+            {
+                return null;
+            }
+            process.WaitForExit();
+            return process.ExitCode == 0 && File.Exists(marker) ? directory : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? _fallbackStubDirectory;
+
+    // hl2sdk checkouts without devtools/bin (or an unexpected .proto layout) fall back to a stub
+    // that only satisfies the hard, unconditional "#include" in eiface.h/inetchannel.h - the same
+    // gap this used to paper over before real headers were available, minus the accurate enum.
+    private static string NetworkProtobufFallbackStub()
+    {
+        if (_fallbackStubDirectory != null)
+        {
+            return _fallbackStubDirectory;
+        }
+        string directory = Path.Combine(Path.GetTempPath(), "s2atelier-network-proto-stub");
+        Directory.CreateDirectory(directory);
+        string stub = Path.Combine(directory, "network_connection.pb.h");
+        if (!File.Exists(stub))
+        {
+            File.WriteAllText(stub, "#pragma once\ntypedef int ENetworkDisconnectionReason;\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        _fallbackStubDirectory = directory;
+        return directory;
     }
 
     internal static int ParseHeader(string path, bool testOnly, bool printDiagnostics, void* targetTil = null)
@@ -396,6 +560,11 @@ public static unsafe class SchemaImport
                 selection.Classes.ContainsKey(descriptor.ClassName)) descriptors.Add(descriptor);
         }
         foreach (var saved in existing.Values) boundaries.Add(saved.Address);
+        // MSVC can give every vftable of a class the same unqualified symbol. Without a readable
+        // locator such a table's subobject is unknown; assuming offset 0 makes it a second primary table.
+        var ambiguousUnqualified = descriptors.Where(x => x.Abi == VTableAbi.Msvc && x.SecondaryBaseName == null)
+            .GroupBy(x => x.ClassName, StringComparer.Ordinal).Where(x => x.Count() > 1)
+            .Select(x => x.Key).ToHashSet(StringComparer.Ordinal);
         foreach (VTableDescriptor descriptor in descriptors.OrderBy(x => x.Address))
         {
             // Symbols supply a hard stopping boundary, not proof that every byte before it is a slot.
@@ -411,9 +580,11 @@ public static unsafe class SchemaImport
             foreach (VTableSlice slice in slices.Where(x => x.Functions.Count > 0))
             {
                 ulong? offset = descriptor.Abi == VTableAbi.Itanium ? checked((ulong)-slice.OffsetToTop)
-                    : ReadMsvcObjectOffset(slice.AddressPoint) ?? (descriptor.SecondaryBaseName == null ? 0UL : null);
+                    : ReadMsvcObjectOffset(slice.AddressPoint) ??
+                      (descriptor.SecondaryBaseName == null && !ambiguousUnqualified.Contains(descriptor.ClassName) ? 0UL : null);
                 string? owner = descriptor.Abi == VTableAbi.Msvc
-                    ? descriptor.SecondaryBaseName ?? descriptor.ClassName
+                    // An unqualified symbol only names the complete class for its primary table.
+                    ? descriptor.SecondaryBaseName ?? (offset == 0 ? descriptor.ClassName : null)
                     : ResolveBaseAtOffset(descriptor.ClassName, slice.OffsetToTop, selection);
                 if (owner != null && !selection.Classes.ContainsKey(owner)) owner = null;
                 found.TryAdd(slice.AddressPoint, new(descriptor.ClassName, slice.AddressPoint, offset,
@@ -439,6 +610,10 @@ public static unsafe class SchemaImport
             polymorphic.Add(table.ClassName);
             if (table.ThisType != null) polymorphic.Add(table.ThisType);
             if (table.Truncated) Console.Error.WriteLine($"[schema] {table.ClassName} vtable 0x{table.AddressPoint:X}: scan limit reached.");
+            // Statically linked CRTs often lack a FLIRT match, leaving _purecall unnamed. It is still
+            // recognizable: every pure-virtual slot points at it and it never returns (it aborts).
+            foreach (ulong function in table.Functions)
+                if (IsFunctionStart(function) && IdaNative.func_does_return(function) == 0) pureCalls.Add(function);
         }
         var expected = new HashSet<string>(polymorphic, StringComparer.Ordinal);
         var queue = new Queue<string>(expected);
@@ -460,10 +635,17 @@ public static unsafe class SchemaImport
         if (locator == 0 || locator > ulong.MaxValue - 23 || IdaNative.is_mapped(locator + 23) == 0 ||
             IdaNative.is_mapped(locator) == 0 || IdaNative.get_dword(locator) != 1) return null;
         // PE x64 RTTICompleteObjectLocator uses image-relative references; validate its self RVA.
+        // The image base itself (the PE header) is usually not loaded, so validate the referenced
+        // type descriptor and class hierarchy instead of requiring the base to be mapped.
         uint self = IdaNative.get_dword(locator + 20);
-        if (self > locator || IdaNative.is_mapped(locator - self) == 0) return null;
+        if (self > locator) return null;
+        ulong imageBase = locator - self;
         uint type = IdaNative.get_dword(locator + 12), hierarchy = IdaNative.get_dword(locator + 16);
-        if (IdaNative.is_mapped(locator - self + type) == 0 || IdaNative.is_mapped(locator - self + hierarchy) == 0)
+        ulong typeName = imageBase + type + 16;
+        if (type == 0 || hierarchy == 0 || IdaNative.is_mapped(typeName + 3) == 0 ||
+            IdaNative.is_mapped(imageBase + hierarchy + 15) == 0 ||
+            IdaNative.get_byte(typeName) != '.' || IdaNative.get_byte(typeName + 1) != '?' ||
+            IdaNative.get_byte(typeName + 2) != 'A')
             return null;
         return IdaNative.get_dword(locator + 4);
     }
@@ -580,12 +762,34 @@ public static unsafe class SchemaImport
         VTableBindingSummary result = VTableFunctionBinder.Bind(scan.FunctionOwners, scan.PureCallAddresses,
             scan.UnresolvedThisAddresses, selection.Classes, new IdaFunctionTypeEditor(diagnostics),
             (address, owners) => diagnostics.Write(
-                $"[schema] vfunc 0x{address:X}: unrelated vtables disagree on this type ({string.Join(", ", owners.Order())}); skipped."));
+                $"[schema] vfunc 0x{address:X}: unrelated vtables disagree on this type ({string.Join(", ", owners.Order())}); skipped."),
+            scan.Tables);
         diagnostics.Finish();
         return result;
     }
 
-    private static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics)
+    private static bool ReturnsFloatingPoint(TypeInfo* function)
+    {
+        var printed = new QString();
+        try
+        {
+            if (IdaNative.print_tinfo(&printed, null, 0, 0, 0, function, null, null) == 0)
+            {
+                return false;
+            }
+
+            string text = printed.Read();
+            int convention = text.IndexOf("__", StringComparison.Ordinal);
+            string returned = convention > 0 ? text[..convention] : text;
+            return returned.Contains("float", StringComparison.Ordinal) ||
+                   returned.Contains("double", StringComparison.Ordinal);
+        }
+        finally { printed.Dispose(); }
+    }
+
+    // argumentName null keeps the name IDA gave argument 0, for functions not known to be methods.
+    internal static bool TryBindThisParameter(ulong address, string owner, LimitedDiagnostics diagnostics,
+        string? argumentName = "this")
     {
         if (!SdkFunctionBinding.CanUpdateType(address))
         {
@@ -595,7 +799,12 @@ public static unsafe class SchemaImport
         TypeInfo original = default;
         try
         {
-            if (IdaNative.get_tinfo(&original, address) == 0 && IdaNative.guess_tinfo(&original, address) == 0)
+            // IDA's guess often misses arguments the function only passes on. A definite prototype built on
+            // it would make Hex-Rays drop them at every call, so it stays a guess, which Hex-Rays extends while
+            // keeping the this type; only a prototype that was already definite is applied as one.
+            uint applyFlags = (IdaNative.get_aflags(address) & UserTypeFlag) != 0 ? TinfoDefinite : TinfoGuessed;
+            bool guessed = IdaNative.get_tinfo(&original, address) == 0;
+            if (guessed && IdaNative.guess_tinfo(&original, address) == 0)
             {
                 diagnostics.Write($"[schema] vfunc 0x{address:X}: no usable prototype; skipped.");
                 return false;
@@ -607,7 +816,25 @@ public static unsafe class SchemaImport
                 return false;
             }
 
-            if (rawCount > 0)
+            // A guess can miss parameters the callers visibly pass; they are added as integers, which Hex-Rays
+            // refines since the prototype stays a guess. A missing float return or a float argument has no
+            // type to add, so such a guess is left alone. A prototype without arguments gets this added, so it
+            // ends up with at least one.
+            int missing = 0;
+            if (guessed)
+            {
+                (int passed, bool floats) = GuessedPrototype.ArgumentsAtCalls(address);
+                missing = Math.Max(0, passed - Math.Max(1, (int)rawCount));
+                if ((!ReturnsFloatingPoint(&original) && GuessedPrototype.ReturnsFloat(address)) ||
+                    (missing > 0 && floats))
+                {
+                    diagnostics.Write($"[schema] vfunc 0x{address:X}: IDA's guessed prototype misses a floating-point " +
+                                      "return or argument; skipped.");
+                    return false;
+                }
+            }
+
+            if (rawCount > 0 && missing == 0)
             {
                 TypeInfo thisType = default;
                 var thisName = new QString();
@@ -628,10 +855,10 @@ public static unsafe class SchemaImport
                         return false;
                     }
 
-                    byte* nativeThisName = Utf8.Allocate("this");
+                    byte* nativeThisName = argumentName == null ? null : Utf8.Allocate(argumentName);
                     try
                     {
-                        if (IdaNative.set_tinfo_property4(&original, StaFunctionArgumentName, 0,
+                        if (nativeThisName != null && IdaNative.set_tinfo_property4(&original, StaFunctionArgumentName, 0,
                                 (nuint)nativeThisName, 0, 0) != 0)
                         {
                             diagnostics.Write($"[schema] vfunc 0x{address:X}: could not name argument 0 'this'; skipped.");
@@ -642,7 +869,7 @@ public static unsafe class SchemaImport
                     {
                         Utf8.Free(nativeThisName);
                     }
-                    return IdaNative.apply_tinfo(address, &original, TinfoDefinite) != 0;
+                    return IdaNative.apply_tinfo(address, &original, applyFlags) != 0;
                 }
                 finally
                 {
@@ -662,7 +889,9 @@ public static unsafe class SchemaImport
                 {
                     return false;
                 }
-                declaration = VTableAnalysis.RewriteFirstParameter(printed.Read(), marker, owner, checked((int)rawCount));
+                declaration = VTableAnalysis.AppendParameters(
+                    VTableAnalysis.RewriteFirstParameter(printed.Read(), marker, owner, checked((int)rawCount)),
+                    Math.Max(1, (int)rawCount), missing);
                 if (!declaration.TrimEnd().EndsWith(';'))
                 {
                     declaration += ";";
@@ -688,7 +917,8 @@ public static unsafe class SchemaImport
                     return false;
                 }
 
-                byte* thisName = Utf8.Allocate("this");
+                // The rewritten declaration names the parameter with a placeholder; a1 is IDA's own name for it.
+                byte* thisName = Utf8.Allocate(argumentName ?? "a1");
                 try
                 {
                     if (IdaNative.set_tinfo_property4(&replacement, StaFunctionArgumentName, 0,
@@ -703,7 +933,7 @@ public static unsafe class SchemaImport
                     Utf8.Free(thisName);
                 }
 
-                return IdaNative.apply_tinfo(address, &replacement, TinfoDefinite) != 0;
+                return IdaNative.apply_tinfo(address, &replacement, applyFlags) != 0;
             }
             finally
             {
@@ -746,10 +976,16 @@ public static unsafe class SchemaImport
 
     private sealed class IdaFunctionTypeEditor(LimitedDiagnostics diagnostics) : IVirtualFunctionTypeEditor
     {
-        public bool TryBindThis(ulong address, string owner) => TryBindThisParameter(address, owner, diagnostics);
+        private readonly HashSet<ulong> _typed = [];
+
+        public bool TryBindThis(ulong address, string owner)
+            => TryBindThisParameter(address, owner, diagnostics) && _typed.Add(address);
+
+        public bool TryName(ulong address, string name)
+            => SdkFunctionBinding.TryNameFunction(address, name, _typed.Contains(address), "vtable slot", diagnostics.Write);
     }
 
-    private sealed class LimitedDiagnostics(int limit)
+    internal sealed class LimitedDiagnostics(int limit)
     {
         private int _seen;
 

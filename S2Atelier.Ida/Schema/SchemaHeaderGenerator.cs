@@ -38,6 +38,31 @@ public static partial class SchemaHeaderGenerator
         "ItemFlagTypes_t", "DamageTypes_t", "ObserverMode_t", "EntityDissolveType_t", "Class_T", "InputBitMask_t",
     ], StringComparer.Ordinal);
 
+    // HL2SDK names these template specializations in interface method signatures, but their argument
+    // is engine-private and never defined. IDAClang instantiates such specializations eagerly, so
+    // declare them explicitly without a definition. Shared with the Valve interface import headers.
+    internal static readonly string[] OpaqueSdkSpecializations =
+    [
+        // ISource2Server::GetEntity2Networkables; an instantiated map node holds the incomplete element.
+        "struct Entity2Networkable_t;",
+        "template <typename T> class CDefLess;",
+        "template <typename K, typename T, typename LF, typename I> class CUtlOrderedMap;",
+        "template <> class CUtlOrderedMap<int, Entity2Networkable_t, CDefLess<int>, unsigned short>;",
+    ];
+
+    // The value types a convar can hold, indexed by EConVarType (tier1/convar.h).
+    internal static readonly string[] ConVarValueTypes =
+    [
+        "bool", "short", "unsigned short", "int", "unsigned int", "long long", "unsigned long long",
+        "float", "double", "CUtlString", "Color", "Vector2D", "Vector", "Vector4D", "QAngle", "VectorWS",
+    ];
+
+    // CConVar<T> is only instantiated in modules that declare convars, so the SDK translation unit has
+    // none of them. An extern of each value type instantiates the class - not its member bodies - which
+    // is all the convar pass needs to type a registered convar's global.
+    internal static IEnumerable<string> ConVarInstantiations()
+        => ConVarValueTypes.Select((type, index) => $"extern CConVar<{type}> __s2atelier_convar_{index:D2};");
+
     private static readonly string[] Includes =
     [
         "tier0/platform.h", "eiface.h", "iserver.h", "inetchannel.h", "iloopmode.h", "interfaces/interfaces.h",
@@ -61,6 +86,7 @@ public static partial class SchemaHeaderGenerator
     {
         vtableClasses ??= new HashSet<string>(StringComparer.Ordinal);
         var polymorphic = ExpandPolymorphic(selection, vtableClasses);
+        var alignments = ComputeClassAlignments(selection, polymorphic);
         var opaque = CollectOpaqueTypes(selection);
         var templates = CollectExplicitTemplateInstantiations(selection);
         var text = new StringBuilder(1024 * 1024);
@@ -123,7 +149,7 @@ public static partial class SchemaHeaderGenerator
                     text.Append("template class ").Append(template).AppendLine(";");
                 }
             }
-            EmitScopedType(text, group, 0, selection, generated, synthetic, polymorphic, opaque, assertions);
+            EmitScopedType(text, group, 0, selection, generated, synthetic, polymorphic, alignments, opaque, assertions);
             int forceIndex = 0;
             string nestedPrefix = group + "::";
             foreach (string nested in generated.Keys.Concat(selection.Enums.Keys.Where(x => !IsHl2Override(x)))
@@ -171,8 +197,20 @@ public static partial class SchemaHeaderGenerator
         text.AppendLine("#include <cstddef>");
         text.AppendLine("#include <cstdint>");
         text.AppendLine("#include <utility>");
-        text.AppendLine("#define GOOGLE_PROTOBUF_INCLUDED_network_5fconnection_2eproto 1");
-        text.AppendLine("typedef int ENetworkDisconnectionReason;");
+        // eiface.h/igameevents.h pass CNetMessagePB<T> (see netmessage.h) for a couple of
+        // protobuf message types; T must be complete before those headers are reached. When the
+        // SDK's protoc compiled real headers for them (see ConfigureClang), pull those in now;
+        // otherwise these are absent and T stays an incomplete forward declaration, same as before.
+        foreach (string include in (string[])["netmessages.pb.h", "gameevents.pb.h"])
+        {
+            text.Append("#if __has_include(\"").Append(include).AppendLine("\")");
+            text.Append("#include \"").Append(include).AppendLine("\"");
+            text.AppendLine("#endif");
+        }
+        foreach (string declaration in OpaqueSdkSpecializations)
+        {
+            text.AppendLine(declaration);
+        }
         text.AppendLine("#define UTLDELEGATE_H 1");
         text.AppendLine("template <typename T> class CUtlDelegate;");
         for (int count = 0; count <= 5; count++)
@@ -213,6 +251,10 @@ public static partial class SchemaHeaderGenerator
         text.Append("static_assert(sizeof(void*) == 8, \"")
             .Append(platform == SchemaTargetPlatform.WindowsMsvc ? "PE x64" : "ELF x64")
             .AppendLine(" schema import requires 64-bit pointers\");");
+        foreach (string declaration in ConVarInstantiations())
+        {
+            text.AppendLine(declaration);
+        }
         text.AppendLine("#pragma pack(push, 1)");
         text.AppendLine();
     }
@@ -244,6 +286,7 @@ public static partial class SchemaHeaderGenerator
         IReadOnlyDictionary<string, SchemaClass> generated,
         IReadOnlyDictionary<string, SchemaClass> synthetic,
         IReadOnlySet<string> polymorphic,
+        IReadOnlyDictionary<string, int> alignments,
         IReadOnlyDictionary<OpaqueKey, string> opaque,
         ICollection<string> assertions)
     {
@@ -278,7 +321,10 @@ public static partial class SchemaHeaderGenerator
             return;
         }
 
-        string align = !isSynthetic && ValidAlignment(type!.Alignment) ? $" alignas({type.Alignment})" : string.Empty;
+        // Classes without a schema alignment still need their real alignment: clang would otherwise
+        // derive it under pack(1) and misplace this class wherever it is a non-primary base.
+        int alignment = isSynthetic ? 1 : alignments.GetValueOrDefault(fullName, 1);
+        string align = !isSynthetic && (ValidAlignment(type!.Alignment) || alignment > 1) ? $" alignas({alignment})" : string.Empty;
         text.Append(pad).Append("class").Append(align).Append(' ').Append(leaf);
         if (!isSynthetic && type!.BaseClasses.Count > 0)
         {
@@ -294,12 +340,12 @@ public static partial class SchemaHeaderGenerator
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         foreach (string child in children)
         {
-            EmitScopedType(text, child, indent + 1, selection, generated, synthetic, polymorphic, opaque, assertions);
+            EmitScopedType(text, child, indent + 1, selection, generated, synthetic, polymorphic, alignments, opaque, assertions);
         }
 
         if (!isSynthetic)
         {
-            EmitFields(text, type!, fullName, indent + 1, selection, polymorphic, opaque, assertions);
+            EmitFields(text, type!, fullName, indent + 1, selection, polymorphic, alignments, opaque, assertions);
         }
         text.Append(pad).AppendLine("};");
     }
@@ -311,11 +357,19 @@ public static partial class SchemaHeaderGenerator
         int indent,
         SchemaSelection selection,
         IReadOnlySet<string> polymorphic,
+        IReadOnlyDictionary<string, int> alignments,
         IReadOnlyDictionary<OpaqueKey, string> opaque,
         ICollection<string> assertions)
     {
         string pad = new(' ', indent * 4);
-        int current = type.BaseClasses.Sum(x => FindClassSize(selection, x));
+        int current = 0;
+        foreach (string baseName in type.BaseClasses)
+        {
+            int size = FindClassSize(selection, baseName);
+            // Non-primary bases start at their own alignment boundary (e.g. a CTransform-holding base).
+            if (size > 0 && current > 0) current = AlignUp(current, alignments.GetValueOrDefault(baseName, 1));
+            current += size;
+        }
         bool primaryBasePolymorphic = type.BaseClasses.Count > 0 && polymorphic.Contains(type.BaseClasses[0]);
         bool ownVptr = polymorphic.Contains(fullName) && !primaryBasePolymorphic && current == 0;
         if (ownVptr)
@@ -684,6 +738,59 @@ public static partial class SchemaHeaderGenerator
             : field.SignedValue == long.MinValue
                 ? "(-9223372036854775807LL - 1LL)"
                 : field.SignedValue.ToString(CultureInfo.InvariantCulture) + "LL";
+
+    private static int AlignUp(int value, int alignment) => (value + alignment - 1) / alignment * alignment;
+
+    private static IReadOnlyDictionary<string, int> ComputeClassAlignments(
+        SchemaSelection selection, IReadOnlySet<string> polymorphic)
+    {
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+
+        int ClassAlignment(string name)
+        {
+            if (result.TryGetValue(name, out int cached)) return cached;
+            if (!selection.Classes.TryGetValue(name, out SchemaClass? type) || type.Synthetic || !visiting.Add(name))
+                return 1;
+            int alignment = type.Alignment;
+            if (!ValidAlignment(alignment))
+            {
+                alignment = DeriveAlignment(type);
+                // A derived alignment that the schema size contradicts is not trustworthy.
+                if (type.Size > 0 && type.Size % alignment != 0) alignment = 1;
+            }
+            visiting.Remove(name);
+            result[name] = alignment;
+            return alignment;
+        }
+
+        int DeriveAlignment(SchemaClass type)
+        {
+            int alignment = polymorphic.Contains(type.Name) ? 8 : 1;
+            foreach (string baseName in type.BaseClasses) alignment = Math.Max(alignment, ClassAlignment(baseName));
+            foreach (SchemaField field in type.Fields)
+            {
+                alignment = Math.Max(alignment, field switch
+                {
+                    { Kind: SchemaFieldKind.Bitfield } => 1,
+                    _ when ValidAlignment(field.Alignment) => field.Alignment,
+                    { Kind: SchemaFieldKind.Pointer } => 8,
+                    { Kind: SchemaFieldKind.Reference or SchemaFieldKind.FixedArray } =>
+                        ReferenceAlignment(SchemaDatabase.NormalizeTypeReference(field.TypeName)),
+                    _ => 1,
+                });
+            }
+            return alignment;
+        }
+
+        int ReferenceAlignment(string name)
+            => selection.Enums.TryGetValue(name, out SchemaEnum? schemaEnum)
+                ? ValidAlignment(schemaEnum.Alignment) ? schemaEnum.Alignment : 1
+                : ClassAlignment(name);
+
+        foreach (string name in selection.Classes.Keys) ClassAlignment(name);
+        return result;
+    }
 
     private static int FindClassSize(SchemaSelection selection, string name)
         => selection.Classes.TryGetValue(name, out SchemaClass? type) ? type.Size : 0;

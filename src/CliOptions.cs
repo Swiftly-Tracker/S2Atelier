@@ -22,9 +22,13 @@ internal sealed class CliOptions
 
     public bool NameFnPtrTables { get; private set; }
 
+    public bool NameLogChannels { get; private set; }
+
     public string? ImportProtobufsDir { get; private set; }
 
     public string? ImportSchemaPath { get; private set; }
+
+    public string? ConVarTypesPath { get; private set; }
 
     public bool ImportInterfaces { get; private set; }
 
@@ -89,6 +93,10 @@ internal sealed class CliOptions
                     options.NameConVars = true;
                     break;
 
+                case "--name-log-channels":
+                    options.NameLogChannels = true;
+                    break;
+
                 case "--name-fnptr-tables":
                     options.NameFnPtrTables = true;
                     break;
@@ -103,6 +111,14 @@ internal sealed class CliOptions
 
                 case "--import-schema":
                     options.ParseError = "--import-schema requires an sdk.json path.";
+                    break;
+
+                case "--convar-types" when i + 1 < args.Length:
+                    options.ConVarTypesPath = args[++i];
+                    break;
+
+                case "--convar-types":
+                    options.ParseError = "--convar-types requires a convars.json path.";
                     break;
 
                 case "--import-interfaces":
@@ -136,6 +152,34 @@ internal sealed class CliOptions
         }
 
         return options;
+    }
+
+    public bool ValidateConVarOptions(out string? error)
+    {
+        error = null;
+        if (ConVarTypesPath == null)
+        {
+            return true;
+        }
+        if (!NameConVars)
+        {
+            error = "--convar-types requires --name-convars.";
+            return false;
+        }
+
+        try
+        {
+            ConVarTypesPath = Path.GetFullPath(ConVarTypesPath);
+            S2Atelier.Ida.ConVarNaming.LoadDumpedTypes(ConVarTypesPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or
+                                   NotSupportedException or System.Text.Json.JsonException)
+        {
+            error = $"Cannot use convar JSON '{ConVarTypesPath}': {ex.Message}";
+            return false;
+        }
+
+        return true;
     }
 
     public bool ValidateSchemaOptions(out string? error)

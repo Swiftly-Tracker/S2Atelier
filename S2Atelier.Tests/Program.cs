@@ -12,6 +12,7 @@ var tests = new (string Name, Action Run)[]
     ("flat sdk parse and selection", TestSelection),
     ("conflicting duplicate fails", TestConflict),
     ("golden header features", TestHeader),
+    ("aligned non-primary base", TestAlignedSecondaryBase),
     ("vtable ABI names", TestVTableNames),
     ("vtable table boundaries", TestVTableBoundaries),
     ("vtable bounded unknown slots", TestVTableUnknownSlots),
@@ -22,6 +23,7 @@ var tests = new (string Name, Action Run)[]
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),
     ("function binding statistics", TestFunctionBindingStatistics),
+    ("constructor selection", TestConstructorSelection),
     ("Valve interface catalog", TestValveInterfaceCatalog),
     ("single Cvar slot with duplicate SDK rows", TestSingleCvarSlot),
     ("known interface implementations", TestKnownInterfaceImplementations),
@@ -97,7 +99,10 @@ static void TestHeader()
     Contains(header, "#include \"tier1/KeyValues.h\"");
     Contains(header, "#include \"shareddefs.h\"");
     Contains(header, "struct alignas(8) __s2_opaque_MysteryAtomic_5_8_8");
-    Contains(header, "GOOGLE_PROTOBUF_INCLUDED_network_5fconnection_2eproto");
+    Contains(header, "#if __has_include(\"netmessages.pb.h\")");
+    Contains(header, "#include \"netmessages.pb.h\"");
+    Contains(header, "#if __has_include(\"gameevents.pb.h\")");
+    Contains(header, "#include \"gameevents.pb.h\"");
     True(!header.Contains("#pragma once", StringComparison.Ordinal));
     Contains(header, "static_assert(offsetof(Base, __vftable) == 0)");
     Contains(header, "static_assert(sizeof(Derived) == 40)");
@@ -108,6 +113,32 @@ static void TestHeader()
     string linux = SchemaHeaderGenerator.Generate(server, SchemaTargetPlatform.LinuxItanium).Text;
     Contains(linux, "ELF x64 schema import requires 64-bit pointers");
     Contains(linux, "static_assert(sizeof(Shared_t) == 32)");
+}
+
+static void TestAlignedSecondaryBase()
+{
+    // Mirrors CPathQueryComponent: the second base has no schema alignment but holds a
+    // 16-byte-aligned member, so MSVC places it at 16 rather than directly after the first base.
+    using TempJson fixture = new("""
+    {
+      "classes": [
+        {"name":"Component","name_hash":1,"project":"server","size":8,"alignment":8,"is_struct":false,"has_chainer":false,
+         "base_classes_count":0,"base_classes":[],"fields_count":0,"fields":[]},
+        {"name":"QueryUtil","name_hash":2,"project":"server","size":32,"alignment":255,"is_struct":false,"has_chainer":false,
+         "base_classes_count":0,"base_classes":[],"fields_count":1,
+         "fields":[{"name":"m_position","name_hash":3,"kind":"ref","type":"VectorAligned","offset":16,"size":16,"alignment":16,"networked":false}]},
+        {"name":"QueryComponent","name_hash":4,"project":"server","size":64,"alignment":255,"is_struct":false,"has_chainer":false,
+         "base_classes_count":2,"base_classes":["Component","QueryUtil"],"fields_count":0,"fields":[]}
+      ],
+      "enums": []
+    }
+    """);
+    SchemaSelection selection = SchemaDatabase.Load(fixture.Path).Select("server", "server.dll")!;
+    string header = SchemaHeaderGenerator.Generate(selection, SchemaTargetPlatform.WindowsMsvc).Text;
+    Contains(header, "class alignas(16) QueryUtil {");
+    string nl = Environment.NewLine;
+    Contains(header, $"class alignas(16) QueryComponent : public Component, public QueryUtil {{{nl}public:{nl}" +
+        $"    unsigned char __pad_0[16];{nl}}};");
 }
 
 static void TestVTableNames()
@@ -186,6 +217,9 @@ static void TestVTableTypes()
     Equal("ns::Derived_vtbl,ns::Derived_0010_vtbl,ns::Derived_0010_ea_1200_vtbl,ns::Derived_ea_1300_vtbl", string.Join(',', names));
     Equal("slot_2", VTableTypeBinder.SlotName(null, 2));
     Equal("vfn_Derived_Foo_0", VTableTypeBinder.SlotName("Derived::Foo", 0));
+    Equal("ns::Derived::vfn_385", VTableTypeBinder.FunctionName("ns::Derived", 385));
+    Equal("vfn_385", VTableTypeBinder.SlotName("ns::Derived::vfn_385", 385));
+    Equal("vfn_sub_1000_3", VTableTypeBinder.SlotName("sub_1000", 3));
     var editor = new FakeVTableTypeEditor();
     var result = VTableTypeBinder.Bind(tables, editor);
     Equal(new VTableTypeSummary(3, 2, 1, 1), result);
@@ -462,6 +496,25 @@ static void TestPrototypeRewrite()
             "__s2_vfunc_marker", "Base", 2));
 }
 
+static void TestConstructorSelection()
+{
+    VptrWriter[] writers =
+    [
+        new(0x100, ["Base"], false, null, false),                // root constructor: no base call to confirm it
+        new(0x200, ["Derived"], true, 0x100, false),             // calls the base constructor, then stores its vtable
+        new(0x300, ["Derived"], false, null, true),              // deleting destructor reached from a vtable
+        new(0x400, ["Leaf", "Derived", "Base"], true, 0x900, false), // inlined destructor chain after a member call
+        new(0x500, ["Other"], true, 0x100, false),               // overloads: two constructors for one class
+        new(0x600, ["Other"], true, 0x200, false),
+        new(0x700, ["Thunked"], true, 0x200, true),              // referenced by an unnamed table
+        new(0x800, ["Base"], true, 0x100, false),                // base call writes the same class: not a constructor
+    ];
+    var selected = ConstructorAnalysis.SelectConstructors(writers);
+    Equal("Derived:512", string.Join(',', selected.OrderBy(x => x.Key).Select(x => $"{x.Key}:{x.Value}")));
+    Equal("CCSPlayerPawn::CCSPlayerPawn", ConstructorAnalysis.ConstructorName("CCSPlayerPawn"));
+    Equal("ns::Foo<a::B>::Foo", ConstructorAnalysis.ConstructorName("ns::Foo<a::B>"));
+}
+
 static void TestFunctionBindingStatistics()
 {
     using TempJson fixture = new(TestData.FixtureJson);
@@ -473,13 +526,40 @@ static void TestFunctionBindingStatistics()
         [40] = new(StringComparer.Ordinal) { "Base" },
         [20] = new(StringComparer.Ordinal) { "Base", "Unrelated" },
     };
+    SchemaVTable[] tables =
+    [
+        new("Base", 0x1000, 0, "Base", [], [10, 30, 40]),
+        new("Derived", 0x2000, 0, "Derived", [], [10, 30, 40]),
+        // The same function in another class's secondary table sits at a different offset.
+        new("Other", 0x3000, 8, "Base", ["Base"], [30, 10]),
+    ];
     var editor = new FakeFunctionTypeEditor(new HashSet<ulong> { 30 });
     VTableBindingSummary result = VTableFunctionBinder.Bind(owners,
-        new HashSet<ulong> { 40 }, new HashSet<ulong>(), selection.Classes, editor);
+        new HashSet<ulong> { 40 }, new HashSet<ulong>(), selection.Classes, editor, tables: tables);
     Equal(1, result.Bound);
     Equal(2, result.Skipped);
     Equal(1, result.Conflicts);
+    Equal(0, result.Named);
     Equal("10:Base,30:Base", string.Join(',', editor.Attempts.Select(x => $"{x.Address}:{x.Owner}")));
+    Equal("", string.Join(',', editor.Names.Select(x => $"{x.Address}:{x.Name}")));
+
+    SchemaVTable[] consistent =
+    [
+        new("Base", 0x1000, 0, "Base", [], [10, 30, 40]),
+        new("Derived", 0x2000, 0, "Derived", [], [10, 30, 40]),
+    ];
+    editor = new FakeFunctionTypeEditor(new HashSet<ulong> { 30 });
+    result = VTableFunctionBinder.Bind(owners,
+        new HashSet<ulong> { 40 }, new HashSet<ulong>(), selection.Classes, editor, tables: consistent);
+    Equal(2, result.Named);
+    Equal("10:Base::vfn_0,30:Base::vfn_1", string.Join(',', editor.Names.Select(x => $"{x.Address}:{x.Name}")));
+
+    // A thunk referenced only by one class's secondary table is scoped by that class.
+    var thunkOwners = new Dictionary<ulong, HashSet<string>> { [50] = new(StringComparer.Ordinal) { "Base" } };
+    editor = new FakeFunctionTypeEditor(new HashSet<ulong>());
+    result = VTableFunctionBinder.Bind(thunkOwners, new HashSet<ulong>(), new HashSet<ulong>(), selection.Classes,
+        editor, tables: [new SchemaVTable("Derived", 0x4000, 16, "Base", ["Base"], [0, 50])]);
+    Equal("50:Derived::Base::vfn_1", string.Join(',', editor.Names.Select(x => $"{x.Address}:{x.Name}")));
 }
 
 static void TestValveInterfaceCatalog()
@@ -1108,10 +1188,18 @@ sealed class FakeFunctionTypeEditor(IReadOnlySet<ulong> failures) : IVirtualFunc
 {
     public List<(ulong Address, string Owner)> Attempts { get; } = [];
 
+    public List<(ulong Address, string Name)> Names { get; } = [];
+
     public bool TryBindThis(ulong address, string owner)
     {
         Attempts.Add((address, owner));
         return !failures.Contains(address);
+    }
+
+    public bool TryName(ulong address, string name)
+    {
+        Names.Add((address, name));
+        return true;
     }
 }
 

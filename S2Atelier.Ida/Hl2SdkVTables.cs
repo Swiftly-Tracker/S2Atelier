@@ -125,7 +125,6 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
                 .Where(x => x.Header != null).GroupBy(x => x.Header!, StringComparer.OrdinalIgnoreCase).ToArray();
             if (groups.Length == 0) return result;
             Directory.CreateDirectory(directory);
-            File.WriteAllText(Path.Combine(directory, "network_connection.pb.h"), "#pragma once\n");
             SchemaImport.ConfigureClang(root, platform, skipLayoutAssertions: true, directory);
             int index = 0;
             foreach (var group in groups)

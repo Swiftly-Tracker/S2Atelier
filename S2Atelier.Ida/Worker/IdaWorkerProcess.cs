@@ -35,7 +35,7 @@ public static class IdaWorkerProcess
 
             RunJob(message.Path, message.Save, message.PatchPlt, message.NameConVars, message.NameFnPtrTables,
                 message.ImportProtobufsDir, message.ImportSchemaPath, message.Hl2SdkPath, message.SchemaProject,
-                message.ImportInterfaces);
+                message.ImportInterfaces, message.ConVarTypesPath, message.NameLogChannels);
         }
 
         return 0;
@@ -43,7 +43,8 @@ public static class IdaWorkerProcess
 
     private static void RunJob(
         string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables, string? importProtobufsDir,
-        string? importSchemaPath, string? hl2SdkPath, string schemaProject, bool importInterfaces)
+        string? importSchemaPath, string? hl2SdkPath, string schemaProject, bool importInterfaces,
+        string? convarTypesPath, bool nameLogChannels)
     {
         if (!File.Exists(path))
         {
@@ -57,7 +58,10 @@ public static class IdaWorkerProcess
                 importSchemaPath, hl2SdkPath, schemaProject,
                 (fraction, address) =>
                     Send(new WireMessage { Kind = WireKind.Progress, Fraction = fraction, Address = address }),
-                importInterfaces);
+                importInterfaces,
+                stage => Send(new WireMessage { Kind = WireKind.Progress, Stage = stage }),
+                convarTypesPath,
+                nameLogChannels);
 
             Send(new WireMessage
             {
@@ -73,8 +77,12 @@ public static class IdaWorkerProcess
                 ConVarNamingFound = result.ConVarNamingFound,
                 ConVarNamingRenamedObjects = result.ConVarNamingRenamedObjects,
                 ConVarNamingRenamedHandlers = result.ConVarNamingRenamedHandlers,
+                ConVarNamingTypedObjects = result.ConVarNamingTypedObjects,
                 FnPtrNamingFound = result.FnPtrNamingFound,
                 FnPtrNamingRenamed = result.FnPtrNamingRenamed,
+                LogChannelNamingApplicable = result.LogChannelNamingApplicable,
+                LogChannelNamingFound = result.LogChannelNamingFound,
+                LogChannelNamingRenamed = result.LogChannelNamingRenamed,
                 ProtoImportApplicable = result.ProtoImportApplicable,
                 ProtoTypesDefined = result.ProtoTypesDefined,
                 ProtoImportErrors = result.ProtoImportErrors,

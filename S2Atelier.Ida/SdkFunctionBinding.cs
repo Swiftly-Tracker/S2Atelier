@@ -125,6 +125,52 @@ internal static unsafe class SdkFunctionBinding
         return new(bound, skipped, conflicts);
     }
 
+    // Names a function the SDK does not declare (vtable slots, constructors). The ownership comment records
+    // the name, and the prototype when this run bound it, so later runs update their own output but never user edits.
+    internal static bool TryNameFunction(ulong address, string name, bool typeBound, string source, Action<string> diagnostic)
+    {
+        string oldComment = ReadComment(address);
+        var metadata = ReadOwnership(oldComment);
+        string currentName = SchemaVTableTypes.NameAt(address);
+        if (!CanUpdateName(currentName, metadata)) return false;
+        string wanted = NameAvailable(name, address) ? name : $"{name}_ea_{address:X}";
+        byte* native = Utf8.Allocate(wanted);
+        try
+        {
+            if (!NameAvailable(wanted, address) || IdaNative.set_name(address, native, 0x01 | 0x40) == 0)
+            {
+                diagnostic($"[schema] vfunc 0x{address:X}: function name {wanted} unavailable/rejected.");
+                return false;
+            }
+        }
+        finally { Utf8.Free(native); }
+        string? prototype = typeBound ? FingerprintAt(address) : metadata?.Prototype;
+        string comment = MergeOwnership(oldComment, new(SchemaVTableTypes.NameAt(address), prototype, source));
+        byte* text = Utf8.Allocate(comment);
+        try
+        {
+            if (IdaNative.set_cmt(address, text, 1) == 0)
+                diagnostic($"[schema] vfunc 0x{address:X}: ownership comment could not be saved.");
+        }
+        finally { Utf8.Free(text); }
+        return true;
+    }
+
+    // Records a prototype this run bound without naming the function, so later runs may update it.
+    internal static void RecordType(ulong address, string source, Action<string> diagnostic)
+    {
+        string oldComment = ReadComment(address);
+        var metadata = ReadOwnership(oldComment);
+        string comment = MergeOwnership(oldComment, new(metadata?.Name, FingerprintAt(address), metadata?.Source ?? source));
+        byte* text = Utf8.Allocate(comment);
+        try
+        {
+            if (IdaNative.set_cmt(address, text, 1) == 0)
+                diagnostic($"[schema] function 0x{address:X}: ownership comment could not be saved.");
+        }
+        finally { Utf8.Free(text); }
+    }
+
     internal static string? SelectImplementationOwner(IEnumerable<string?> candidates,
         Func<string, string, bool> isZeroOffsetBase)
     {

@@ -12,6 +12,7 @@ public static unsafe class Insn
     private const int OpSize = 40;
 
     private const int OpTypeOffset = 1;
+    private const int OpDtypeOffset = 5;
     private const int OpRegOffset = 6;
     private const int OpValueOffset = 8;
     private const int OpAddrOffset = 16;
@@ -38,6 +39,9 @@ public static unsafe class Insn
     public static ulong Ea(byte* buffer) => *(ulong*)(buffer + EaOffset);
 
     public static byte OpType(byte* buffer, int index) => buffer[OpsOffset + index * OpSize + OpTypeOffset];
+
+    // op_t::dtype; dt_word (2 bytes) is 1.
+    public static byte OpWidth(byte* buffer, int index) => buffer[OpsOffset + index * OpSize + OpDtypeOffset];
 
     public static ushort OpRegister(byte* buffer, int index) => *(ushort*)(buffer + OpsOffset + index * OpSize + OpRegOffset);
 
