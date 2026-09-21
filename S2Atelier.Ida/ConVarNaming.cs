@@ -71,6 +71,7 @@ public static unsafe class ConVarNaming
     private const int SnNoCheck = 0x01;
     private const int SnForce = 0x800;
     private const int SegPermWrite = 2;
+    private const int SegPermExecute = 1;
 
     private static readonly string[] EngineMarkers =
         ["FCVAR_", "VEngineCvar", "SchemaSystem_", "libtier0", "tier0.dll"];
@@ -562,6 +563,32 @@ public static unsafe class ConVarNaming
         return (perm & SegPermWrite) != 0;
     }
 
+    // A string in read-only, non-executable data: printable bytes up to a terminating zero.
+    private static bool InReadOnlyString(ulong ea)
+    {
+        void* seg = IdaNative.getseg(ea);
+        if (seg == null || (((byte*)seg)[42] & (SegPermWrite | SegPermExecute)) != 0)
+        {
+            return false;
+        }
+
+        for (ulong i = 0; i < 256 && IdaNative.is_loaded(ea + i) != 0; i++)
+        {
+            byte value = IdaNative.get_byte(ea + i);
+            if (value == 0)
+            {
+                return true;
+            }
+
+            if (value is < 0x20 or > 0x7E)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsFunctionStart(ulong ea)
     {
         void* pfn = IdaNative.get_func(ea);
@@ -662,6 +689,8 @@ public static unsafe class ConVarNaming
     {
         var prof = new CtorProfile { Addr = ctor };
         var votes = new int[ArgSlots, ArgRoles];
+        // Zero is no evidence of any role, except for flags that are often none at all.
+        var zeros = new int[ArgSlots];
 
         foreach (ulong from in Xrefs.AllTo(ctor))
         {
@@ -675,8 +704,14 @@ public static unsafe class ConVarNaming
 
             for (int i = 0; i < ArgSlots; i++)
             {
-                if (!ArgValue(from, pfnStart, i, out ulong v) || v == 0)
+                if (!ArgValue(from, pfnStart, i, out ulong v))
                 {
+                    continue;
+                }
+
+                if (v == 0)
+                {
+                    zeros[i]++;
                     continue;
                 }
 
@@ -699,7 +734,9 @@ public static unsafe class ConVarNaming
                 {
                     votes[i, (int)ArgRole.Object]++;
                 }
-                else if (v < 0x100000000ul)
+                // A Linux image starts at 0, so a pointer to read-only data (an empty default string) is as
+                // small as a flag value; a value that points at a string is none.
+                else if (v < 0x100000000ul && !InReadOnlyString(v))
                 {
                     votes[i, (int)ArgRole.Flags]++;
                 }
@@ -707,12 +744,18 @@ public static unsafe class ConVarNaming
         }
 
         var taken = new bool[ArgSlots];
-        for (int r = 1; r < ArgRoles; r++)
+        // The flags come next to the description: before it for a convar (after the default value, which a
+        // small integer default would otherwise pass for flags), after it for a command. So they are
+        // assigned last, next to the description once it is known.
+        int description = -1;
+        foreach (ArgRole role in (ArgRole[])[ArgRole.Object, ArgRole.Name, ArgRole.Description, ArgRole.Callback, ArgRole.Flags])
         {
+            int r = (int)role;
             int best = -1, top = 0;
             for (int i = 0; i < ArgSlots; i++)
             {
-                if (taken[i] || votes[i, r] <= top)
+                if (taken[i] || votes[i, r] <= top ||
+                    role == ArgRole.Flags && description >= 0 && Math.Abs(i - description) != 1)
                 {
                     continue;
                 }
@@ -721,13 +764,28 @@ public static unsafe class ConVarNaming
                 best = i;
             }
 
+            // Next to the description, registrations without flags pass zero; they count for the slot too, after
+            // the flag values themselves.
+            if (role == ArgRole.Flags && description >= 0)
+            {
+                best = new[] { description - 1, description + 1 }
+                    .Where(i => i >= 0 && i < ArgSlots && !taken[i] && votes[i, r] + zeros[i] > 0)
+                    .OrderByDescending(i => votes[i, r]).ThenByDescending(i => zeros[i])
+                    .DefaultIfEmpty(-1).First();
+                top = best < 0 ? 0 : votes[best, r] + zeros[best];
+            }
+
             if (best < 0 || top * 3 < prof.Sites)
             {
                 continue;
             }
 
-            prof.Roles[best] = (ArgRole)r;
+            prof.Roles[best] = role;
             taken[best] = true;
+            if (role == ArgRole.Description)
+            {
+                description = best;
+            }
         }
 
         return prof;
@@ -864,7 +922,8 @@ public static unsafe class ConVarNaming
                 Ctor = prof.Addr,
             };
 
-            if (flagSlot >= 0 && ArgValue(from, pfnStart, flagSlot, out ulong rawFlags) && rawFlags < 0x100000000ul)
+            // FCVAR_ flags reach bit 32 (FCVAR_DEFENSIVE); anything far beyond is no flag value.
+            if (flagSlot >= 0 && ArgValue(from, pfnStart, flagSlot, out ulong rawFlags) && rawFlags < 1ul << 48)
             {
                 cv.Flags = rawFlags;
                 cv.HasFlags = true;
