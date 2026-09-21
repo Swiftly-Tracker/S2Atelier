@@ -443,6 +443,14 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
                     }
                     try
                     {
+                        // A class that only inherits its methods (CLoadingSpawnGroup : ILoadingSpawnGroup {})
+                        // appears in no prototype, so the dependency walk never brought it in.
+                        if (!HasNamedType(IdaNative.get_idati(), table.ThisType!) &&
+                            _sources.TryGetValue((table.ThisType!, 0), out nint thisSource))
+                        {
+                            ImportClass(table.ThisType!, (void*)thisSource);
+                        }
+
                         if (!AdjustThis(ref check, table.ThisType!))
                         {
                             diagnostic($"[schema-sdk] {table.ClassName} slot {index}: cannot resolve this type; fallback.");
@@ -583,6 +591,25 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
             TypeInfo child = new() { Typid = (ulong)IdaNative.get_tinfo_property(id, property) };
             try { return child.Typid != 0 && ImportDependencies(child.Typid, source, importing, visiting); }
             finally { child.Dispose(); }
+        }
+    }
+
+    // Imports a class through a pointer to it, the way the dependency walk imports a named reference.
+    private bool ImportClass(string name, void* source)
+    {
+        TypeInfo pointer = default;
+        var parsed = new QString();
+        byte* declaration = Utf8.Allocate($"{name} *__s2_this;");
+        try
+        {
+            return IdaNative.parse_decl(&pointer, &parsed, source, declaration, 0x0001 | 0x0008 | 0x0080) != 0 &&
+                   ImportDependencies(pointer.Typid, source, new HashSet<string>(), new HashSet<ulong>());
+        }
+        finally
+        {
+            Utf8.Free(declaration);
+            parsed.Dispose();
+            pointer.Dispose();
         }
     }
 
