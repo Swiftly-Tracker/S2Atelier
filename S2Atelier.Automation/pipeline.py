@@ -13,7 +13,7 @@ import traceback
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, CancelledError
 from collections import defaultdict
-from release import compress, publish, cleanup_payload, check_publish_access
+from release import compress, publish, cleanup_payload, check_publish_access, previous_release, download, release_notes
 
 
 def run(args, **kwargs):
@@ -129,9 +129,11 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
             'analyzerSha256': sha256(root / 'tools/atelier/linux/S2Atelier'),
             'containerImage': subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', 's2atelier-linux:local'], text=True).strip()}
     previous = []
+    old_baseline = None
     provenance_file = jobdir / 'provenance.json'
     if provenance_file.exists():
         old = json.loads(provenance_file.read_text())
+        old_baseline = old.get('baseline')
         for key in ('dumpsCommit', 'hl2sdkCommit', 'analyzerSha256', 'downloaderSha256', 'containerImage'):
             if old.get(key) != provenance[key]:
                 raise RuntimeError(f'Cannot resume with changed {key}; use a new job for changed inputs.')
@@ -142,6 +144,7 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
         if old.get('complete') and old.get('excludedModules') == provenance['excludedModules'] and all((jobdir / 'artifacts' / name).is_file() and
                 sha256(jobdir / 'artifacts' / name) == value for name, value in old['archiveHashes'].items()):
             return old
+    provenance['baseline'] = fetch_baseline(jobdir, platform, revision, old_baseline)
     atomic_json(provenance_file, provenance)
     downloads = jobdir / 'binaries'
     downloads.mkdir(exist_ok=True)
@@ -193,6 +196,9 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
                     pending.cancel()
         if errors:
             raise RuntimeError('Binary analysis failed; completed work retained: ' + '; '.join(errors))
+    snapshots = sorted(p for p in (jobdir / 'snapshots').rglob('*.json') if p.is_file())
+    if snapshots:
+        compress(artifacts / ('snapshots-' + platform + '.7z'), snapshots, base_dir=jobdir / 'snapshots')
     common = []
     for module in ('server', 'engine2', 'tier0'):
         name = ('lib' + module + '.so' if platform == 'linux' else module + '.dll') + '.i64'
@@ -278,8 +284,18 @@ def analyze_group(root, job, jobdir, platform, sdk, provenance, binaries, previo
                 raise RuntimeError(f'Native analysis did not produce {database}')
         def mounted(path):
             return ('Z:' + str(path).replace('/', chr(92))) if platform == 'windows' else str(path)
-        args = ['--patch-plt', '--name-convars', '--name-fnptr-tables',
-                '--import-interfaces', '--hl2sdk', mounted(sdk)]
+        args = ['--patch-plt', '--name-convars', '--name-fnptr-tables', '--name-log-channels',
+                '--name-entity-classes', '--import-interfaces', '--hl2sdk', mounted(sdk)]
+        convars = jobdir / 'dumps/dump/convars.json'
+        if convars.is_file():
+            args += ['--convar-types', mounted(convars)]
+        # Per module directory, so modules sharing a name keep their own snapshot.
+        snapshot_dir = jobdir / 'snapshots' / relative.parent
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        args += ['--snapshot', mounted(snapshot_dir)]
+        baseline_dir = jobdir / 'baseline' / relative.parent
+        if baseline_dir.is_dir():
+            args += ['--baseline', mounted(baseline_dir)]
         if any(generated.rglob('*.pb.h')):
             args += ['--import-protobufs', mounted(generated)]
         if job['Request']['ImportSchema']:
@@ -334,6 +350,48 @@ def run_analyzer(root, job, jobdir, sdk, host, unique, image, input_path, extra_
     run(command + extra_args, stdin=subprocess.DEVNULL)
 
 
+def fetch_baseline(jobdir, platform, revision, recorded=None):
+    """The previous release's snapshots, unpacked into jobdir/baseline: what this build is compared with.
+
+    A resumed job keeps the release it started with. Without one (the first release, or no access), every
+    module is analyzed without a baseline and the release notes say so."""
+    target = jobdir / 'baseline'
+    name = 'snapshots-' + platform + '.7z'
+    try:
+        found = previous_release('cs2-' + revision, name)
+        if recorded is not None:
+            if found is None or found[0] != recorded.get('tag'):
+                print(f'Baseline {recorded.get("tag")} is no longer the previous release; keeping it', flush=True)
+            if target.is_dir():
+                return recorded
+        if found is None:
+            print('No previous release with ' + name + '; analyzing without a baseline', flush=True)
+            return None
+        tag, asset = found
+        archive = jobdir / name
+        download(asset['url'], archive)
+        if target.exists():
+            shutil.rmtree(target)
+        executable = shutil.which('7zz') or shutil.which('7z')
+        run([executable, 'x', archive, '-o' + str(target), '-y'], stdout=subprocess.DEVNULL)
+        record = {'tag': tag, 'sha256': sha256(archive)}
+        archive.unlink()
+        return record
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(f'Baseline unavailable ({error}); analyzing without one', flush=True)
+        return None
+
+
+def collect_notes(jobdir, platforms, provenance):
+    """The release body's report: each module's health warnings and regressions."""
+    reports = []
+    for platform in platforms:
+        for path in sorted((jobdir / platform / 'snapshots').rglob('*.health.json')):
+            reports.append((platform, json.loads(path.read_text())))
+    tags = {p['platform']: (p.get('baseline') or {}).get('tag') for p in provenance['platforms']}
+    return release_notes(reports, tags)
+
+
 def excluded_binary(path):
     name = str(path).replace(chr(92), '/').rsplit('/', 1)[-1].casefold()
     return any(name == binary or name.startswith(binary + '.')
@@ -372,7 +430,8 @@ def pipeline(root, jobfile):
     if request.get('PublishRelease', True):
         subject = git(dumps, 'show', '-s', '--format=%s', request['DumpsCommit'])
         archives = sorted(jobdir.glob('*/artifacts/*.7z'))
-        receipt = publish(jobdir, request['DumpsCommit'], subject, archives)
+        notes = collect_notes(jobdir, platforms, provenance)
+        receipt = publish(jobdir, request['DumpsCommit'], subject, archives, notes)
         # Receipt is durable before any payload is removed; logs and hashes remain.
         atomic_json(jobdir / 'release.json', receipt)
         cleanup_payload(jobdir)

@@ -101,6 +101,44 @@ class ReleaseTests(unittest.TestCase):
             release.publish(self.root, 'a'*40, 'build', [self.archive])
         self.assertFalse(any(method in ('DELETE', 'POST') for method, _ in self.events))
 
+    def test_notes_report_disagreements_and_regressions(self):
+        reports = [('windows', {'Module': 'server.dll', 'Warnings': ['[vtable-drift] CFoo: SDK names held.'],
+                                'Regressions': []}),
+                   ('linux', {'Module': 'libserver.so', 'Warnings': [],
+                              'Regressions': ['entity-classes.classes: 516 -> 12 (-97%)']})]
+        notes = release.release_notes(reports, {'windows': 'cs2-' + 'b'*40, 'linux': None})
+        self.assertIn('Compared with windows `cs2-' + 'b'*40 + '`.', notes)
+        self.assertIn('- `server.dll` (windows): [vtable-drift] CFoo: SDK names held.', notes)
+        self.assertIn('### Pass regressions', notes)
+        self.assertIn('- `libserver.so` (linux): entity-classes.classes: 516 -> 12 (-97%)', notes)
+        clean = release.release_notes([('windows', {'Module': 'server.dll', 'Warnings': [], 'Regressions': []})], {})
+        self.assertIn('No previous release to compare with.', clean)
+        self.assertIn('No SDK disagreements', clean)
+        long = release.release_notes([('windows', {'Module': 'm', 'Warnings': ['x' * 1000] * 200, 'Regressions': []})], {})
+        self.assertLessEqual(len(long), release.MAX_NOTES + 100)
+        self.assertTrue(long.endswith('full report.)'))
+
+    def test_notes_become_the_published_body(self):
+        bodies = []
+        def api(method, url, payload=None, path=None):
+            if method == 'PATCH':
+                bodies.append(payload.get('body'))
+            return self.api(method, url, payload, path)
+        with patch.object(release, 'api', api):
+            release.publish(self.root, 'a'*40, 'build', [self.archive], '## Analysis report')
+        self.assertTrue(bodies[-1].endswith('## Analysis report'))
+
+    def test_baseline_is_the_newest_other_published_release(self):
+        asset = {'name': 'snapshots-windows.7z', 'url': 'https://api.github.com/assets/1'}
+        listing = [dict(tag_name='cs2-' + 'c'*40, draft=True, assets=[asset]),
+                   dict(tag_name='cs2-' + 'a'*40, draft=False, assets=[asset]),
+                   dict(tag_name='cs2-' + 'd'*40, draft=False, assets=[]),
+                   dict(tag_name='cs2-' + 'e'*40, draft=False, assets=[asset])]
+        with patch.object(release, 'api', return_value=listing):
+            self.assertEqual(release.previous_release('cs2-' + 'a'*40, 'snapshots-windows.7z'),
+                             ('cs2-' + 'e'*40, asset))
+            self.assertIsNone(release.previous_release('cs2-' + 'e'*40, 'snapshots-linux.7z'))
+
     def test_upstream_regex_and_platform_intersection(self):
         tracked = json.loads((Path(__file__).parent / 'tracked_files.fixture.json').read_text())
         windows = pipeline.tracked_patterns(tracked, 'windows')

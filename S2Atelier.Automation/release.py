@@ -13,6 +13,8 @@ import urllib.request
 
 REPO = 'Swiftly-Tracker/CS2-IDA-Dumps'
 API = 'https://api.github.com/repos/' + REPO
+# GitHub rejects a release body over 125000 characters; the full report is in the snapshot assets.
+MAX_NOTES = 60000
 
 
 def digest(path):
@@ -48,6 +50,12 @@ def compress(archive, files, base_dir=None):
         subprocess.run([executable, 't', str(archive.resolve())], check=True)
     finally:
         shutil.rmtree(staging)
+
+
+BODY = ('IDA 9.4 databases for [CS2-Dumps `{revision}`](https://github.com/Swiftly-Tracker/CS2-Dumps/commit/{revision}).\n\n'
+        'Individual databases and common bundles use 7z/LZMA2 maximum compression. '
+        'Each common bundle contains server, engine2 and tier0 databases. See provenance.json for inputs and hashes. '
+        'snapshots-<platform>.7z holds each module\'s analysis snapshot, the baseline of the next release.')
 
 
 def release_title(subject):
@@ -87,6 +95,59 @@ def api(method, url, payload=None, path=None):
         time.sleep(2 ** attempt)
 
 
+def download(url, target):
+    """Downloads a release asset through the API (its url, not browser_download_url)."""
+    token = os.environ.get('S2A_GITHUB_TOKEN')
+    if not token:
+        raise RuntimeError('S2A_GITHUB_TOKEN is not configured')
+    headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/octet-stream',
+               'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'S2Atelier'}
+    temporary = target.with_name(target.name + '.part')
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=600) as response, \
+            temporary.open('wb') as stream:
+        shutil.copyfileobj(response, stream)
+    temporary.replace(target)
+
+
+def previous_release(tag, asset_name):
+    """The newest published release other than tag that carries asset_name: the baseline of this one."""
+    for release in api('GET', API + '/releases?per_page=30') or []:
+        if release.get('draft') or release.get('tag_name') == tag or not release.get('tag_name', '').startswith('cs2-'):
+            continue
+        asset = next((a for a in release.get('assets', []) if a.get('name') == asset_name), None)
+        if asset is not None:
+            return release['tag_name'], asset
+    return None
+
+
+def release_notes(reports, baseline_tags):
+    """Markdown for the release body: what the SDK disagrees with and which passes fell, per module.
+
+    reports holds (platform, report) pairs, report being an analyzer <module>.health.json."""
+    warnings = [(platform, r['Module'], w) for platform, r in reports for w in r.get('Warnings', [])]
+    regressions = [(platform, r['Module'], x) for platform, r in reports for x in r.get('Regressions', [])]
+    against = ', '.join(f'{platform} `{tag}`' for platform, tag in sorted(baseline_tags.items()) if tag)
+    lines = ['## Analysis report', '']
+    lines.append(f'Compared with {against}.' if against else 'No previous release to compare with.')
+    if not warnings and not regressions:
+        lines += ['', 'No SDK disagreements and no pass fell below the previous release.']
+    for title, items, explanation in (
+            ('SDK disagreements', warnings,
+             'Declarations in hl2sdk that do not match this build. A drifted vtable keeps its SDK names back and '
+             'a contradicted entity class layout its types, until the SDK is fixed; layout differences of '
+             'schema types are reported only.'),
+            ('Pass regressions', regressions,
+             'Counts that fell well below the previous release: a pass no longer recognises a code shape, '
+             'or SDK headers stopped parsing.')):
+        if items:
+            lines += ['', '### ' + title, '', explanation, '']
+            lines += [f'- `{module}` ({platform}): {text}' for platform, module, text in items]
+    notes = '\n'.join(lines)
+    if len(notes) > MAX_NOTES:
+        notes = notes[:MAX_NOTES].rsplit('\n', 1)[0] + '\n\n(Truncated; see the snapshots assets for the full report.)'
+    return notes
+
+
 def check_publish_access():
     repository = api('GET', API)
     if not repository.get('permissions', {}).get('push'):
@@ -109,7 +170,7 @@ def matches(asset, path):
             asset.get('digest') == 'sha256:' + digest(path))
 
 
-def publish(jobdir, revision, subject, archives):
+def publish(jobdir, revision, subject, archives, notes=None):
     if not archives or len({p.name.casefold() for p in archives}) != len(archives):
         raise RuntimeError('Empty or colliding Release asset names')
     if any(p.stat().st_size >= 2 * 1024**3 for p in archives):
@@ -122,9 +183,7 @@ def publish(jobdir, revision, subject, archives):
             raise
         release = api('POST', API + '/releases', {
             'tag_name': tag, 'name': release_title(subject), 'draft': True,
-            'body': f'IDA 9.4 databases for [CS2-Dumps `{revision}`](https://github.com/Swiftly-Tracker/CS2-Dumps/commit/{revision}).\n\n'
-                    'Individual databases and common bundles use 7z/LZMA2 maximum compression. '
-                    'Each common bundle contains server, engine2 and tier0 databases. See provenance.json for inputs and hashes.'})
+            'body': BODY.format(revision=revision)})
     files = archives + [jobdir / 'provenance.json']
     existing = {a['name']: a for a in assets(release['id'])}
     for path in files:
@@ -147,7 +206,10 @@ def publish(jobdir, revision, subject, archives):
     if set(verified) != {p.name for p in files} or any(not matches(verified[p.name], p) for p in files):
         raise RuntimeError('Release asset set/size/SHA-256 verification failed; retaining local files')
     if release['draft']:
-        release = api('PATCH', API + '/releases/' + str(release['id']), {'draft': False, 'name': release_title(subject)})
+        update = {'draft': False, 'name': release_title(subject)}
+        if notes:
+            update['body'] = BODY.format(revision=revision) + '\n\n' + notes
+        release = api('PATCH', API + '/releases/' + str(release['id']), update)
     # Read back publication before authorizing local cleanup.
     release = api('GET', API + '/releases/' + str(release['id']))
     if release['draft']:
