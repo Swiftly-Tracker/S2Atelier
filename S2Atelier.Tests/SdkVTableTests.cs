@@ -27,6 +27,10 @@ internal static class SdkVTableTests
         string?[] repeated = ["A", "A", null, "D", "E"];
         Check(VTableDrift.Conflicts(Recorded(repeated, names), ["A", "A", null, "D", "E"],
             ["Shutdown", "Init", "Save", "Save", "Load"]).Count == 0, "repeated and missing fingerprints ignored");
+        // The SDK gained a missing first method on an unchanged build: nothing moved, so the new names stand.
+        string?[] corrected = ["dtr", "Init", "Shutdown", "Think", "Save"];
+        Check(VTableDrift.Conflicts(Recorded(prints, names), prints, corrected).Count == 0,
+            "an SDK correction on an unchanged build is not drift");
     }
 
     internal static void SlotOwners()
@@ -197,6 +201,18 @@ internal static class SdkVTableTests
             ValveInterfaceCatalog.FindDefinitionHeader("Wrong", headers) == null, "discovery ignores comments");
         headers["b.h"] = "class Right { virtual void G(); };";
         Check(ValveInterfaceCatalog.FindDefinitionHeader("Right", headers) == null, "ambiguous header skipped");
+        var jobs = new Dictionary<string, string>
+        {
+            ["jobthread.h"] = "class CJob : public CRefCounted1<IRefCounted> { virtual void F(); };",
+            ["gcsdk/job.h"] = "namespace GCSDK\n{\nclass CJob { virtual void G(); };\n}",
+            ["outer.h"] = "class COuter { class CInner { virtual void H(); }; };",
+        };
+        Check(ValveInterfaceCatalog.FindDefinitionHeader("CJob", new Dictionary<string, string> { ["jobthread.h"] = jobs["jobthread.h"] }) == "jobthread.h" &&
+              ValveInterfaceCatalog.FindDefinitionHeader("GCSDK::CJob", new Dictionary<string, string> { ["jobthread.h"] = jobs["jobthread.h"] }) == null,
+            "a namespaced class is not a global one of the same name");
+        Check(ValveInterfaceCatalog.FindDefinitionHeader("GCSDK::CJob", new Dictionary<string, string> { ["gcsdk/job.h"] = jobs["gcsdk/job.h"] }) == "gcsdk/job.h" &&
+              ValveInterfaceCatalog.FindDefinitionHeader("COuter::CInner", jobs) == "outer.h",
+            "a scoped class is found where its scope opens");
     }
 
     private static SchemaClass Class(string name, params string[] bases) =>
