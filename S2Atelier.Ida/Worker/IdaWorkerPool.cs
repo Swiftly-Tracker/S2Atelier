@@ -59,7 +59,11 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
         bool importInterfaces = false,
         Action<int, string>? onStage = null,
         string? convarTypesPath = null,
-        bool nameLogChannels = false)
+        bool nameLogChannels = false,
+        string? vtableBaselineDirectory = null,
+        string? vtableSnapshotDirectory = null,
+        bool nameEntityClasses = false,
+        bool typeGlobals = false)
     {
         if (paths.Count == 0)
         {
@@ -87,7 +91,11 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                         (fraction, address) => onProgress?.Invoke(worker.Index, fraction, address),
                         stage => onStage?.Invoke(worker.Index, stage),
                         convarTypesPath,
-                        nameLogChannels);
+                        nameLogChannels,
+                        vtableBaselineDirectory,
+                        vtableSnapshotDirectory,
+                        nameEntityClasses,
+                        typeGlobals);
                     results[index] = item;
                     onFinished?.Invoke(worker.Index, item);
                 }
@@ -135,7 +143,11 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             Action<double, ulong>? onProgress = null,
             Action<string>? onStage = null,
             string? convarTypesPath = null,
-            bool nameLogChannels = false)
+            bool nameLogChannels = false,
+            string? vtableBaselineDirectory = null,
+            string? vtableSnapshotDirectory = null,
+            bool nameEntityClasses = false,
+            bool typeGlobals = false)
         {
             string full = Path.GetFullPath(path);
 
@@ -160,6 +172,10 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     ImportSchemaPath = importSchemaPath,
                     ConVarTypesPath = convarTypesPath,
                     NameLogChannels = nameLogChannels,
+                    VTableBaselineDirectory = vtableBaselineDirectory,
+                    VTableSnapshotDirectory = vtableSnapshotDirectory,
+                    NameEntityClasses = nameEntityClasses,
+                    TypeGlobals = typeGlobals,
                     Hl2SdkPath = hl2SdkPath,
                     ImportInterfaces = importInterfaces,
                     SchemaProject = schemaProject,

@@ -35,7 +35,9 @@ public static class IdaWorkerProcess
 
             RunJob(message.Path, message.Save, message.PatchPlt, message.NameConVars, message.NameFnPtrTables,
                 message.ImportProtobufsDir, message.ImportSchemaPath, message.Hl2SdkPath, message.SchemaProject,
-                message.ImportInterfaces, message.ConVarTypesPath, message.NameLogChannels);
+                message.ImportInterfaces, message.ConVarTypesPath, message.NameLogChannels,
+                message.VTableBaselineDirectory, message.VTableSnapshotDirectory, message.NameEntityClasses,
+                message.TypeGlobals);
         }
 
         return 0;
@@ -44,7 +46,8 @@ public static class IdaWorkerProcess
     private static void RunJob(
         string path, bool save, bool patchPlt, bool nameConVars, bool nameFnPtrTables, string? importProtobufsDir,
         string? importSchemaPath, string? hl2SdkPath, string schemaProject, bool importInterfaces,
-        string? convarTypesPath, bool nameLogChannels)
+        string? convarTypesPath, bool nameLogChannels, string? vtableBaselineDirectory, string? vtableSnapshotDirectory,
+        bool nameEntityClasses, bool typeGlobals)
     {
         if (!File.Exists(path))
         {
@@ -61,7 +64,11 @@ public static class IdaWorkerProcess
                 importInterfaces,
                 stage => Send(new WireMessage { Kind = WireKind.Progress, Stage = stage }),
                 convarTypesPath,
-                nameLogChannels);
+                nameLogChannels,
+                vtableBaselineDirectory,
+                vtableSnapshotDirectory,
+                nameEntityClasses,
+                typeGlobals);
 
             Send(new WireMessage
             {

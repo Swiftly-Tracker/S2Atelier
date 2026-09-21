@@ -114,13 +114,19 @@ internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic,
         finally { type.Dispose(); }
     }
 
+    // A base path revisits a class only through a cycle, which a type id cannot show: every member read gives
+    // its type a fresh id. Paths are bounded too, since a wide hierarchy multiplies them.
+    private const int MaxBasePaths = 4096;
+
     private static void ReadBases(ulong type, ulong offset, string[] path,
         List<(string Name, ulong Offset, string[] Path)> output, HashSet<ulong> visiting)
     {
-        if (path.Length >= 32 || !visiting.Add(type)) return;
+        if (path.Length >= 32 || output.Count >= MaxBasePaths || !visiting.Add(type)) return;
         try
         {
+            // A forward declaration answers the member count with an error value, not a count.
             nuint count = IdaNative.get_tinfo_property(type, 16);
+            if (count > 16384) return;
             for (ulong i = 0; i < count; i++)
             {
                 if (!ValveImplementationTypes.ReadMember(type, i, out IdaUdtMember member)) continue;
@@ -132,7 +138,7 @@ internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic,
                     {
                         IdaNative.get_tinfo_pdata(&name, member.Type.Typid, 0);
                         string spelling = name.Read();
-                        if (spelling.Length == 0) continue;
+                        if (spelling.Length == 0 || path.Contains(spelling, StringComparer.Ordinal)) continue;
                         ulong absolute = checked(offset + member.Offset / 8);
                         string[] next = [.. path, spelling];
                         output.Add((spelling, absolute, next));
@@ -467,6 +473,7 @@ internal sealed unsafe class SchemaVTableTypes(Action<string> diagnostic,
         if (IdaNative.get_tinfo_size(null, original, 0) != IdaNative.get_tinfo_size(null, modified, 0)) return false;
         nuint count = IdaNative.get_tinfo_property(original, 16);
         nuint newCount = IdaNative.get_tinfo_property(modified, 16);
+        if (count > 16384 || newCount > 16384) return false;
         for (ulong i = 0; i < count; i++)
         {
             if (!ValveImplementationTypes.ReadMember(original, i, out IdaUdtMember before)) return false;

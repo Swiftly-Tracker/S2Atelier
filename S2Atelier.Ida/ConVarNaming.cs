@@ -15,6 +15,8 @@ public sealed class ConVarInfo
     // Registered as CConVarRef(name) does: the object, the name and the type in one call.
     public bool ReferenceStyle;
     public ulong Callback = ulong.MaxValue;
+    // The argument slot the registration passes the callback in, or -1 when it was found nearby.
+    public int CallbackSlot = -1;
     public ulong Flags;
     public bool HasFlags;
     // EConVarType (tier1/convar.h), or -1 when the registration does not reveal it.
@@ -71,6 +73,7 @@ public static unsafe class ConVarNaming
     private const int SnNoCheck = 0x01;
     private const int SnForce = 0x800;
     private const int SegPermWrite = 2;
+    private const int SegPermExecute = 1;
 
     private static readonly string[] EngineMarkers =
         ["FCVAR_", "VEngineCvar", "SchemaSystem_", "libtier0", "tier0.dll"];
@@ -122,6 +125,7 @@ public static unsafe class ConVarNaming
         int typedObjects = 0;
         int variables = 0;
         int commands = 0;
+        int flagComments = 0, typedCommands = 0, typedCallbacks = 0;
 
         foreach (var cv in all)
         {
@@ -148,7 +152,22 @@ public static unsafe class ConVarNaming
             {
                 renamedHandlers++;
             }
+
+            if (ConVarRegistrationNotes.CommentFlags(cv))
+            {
+                flagComments++;
+            }
+
+            if (cv.IsCommand)
+            {
+                var (objectTyped, callbackTyped) = ConVarRegistrationNotes.TypeCommand(cv, CommandCallbackKind);
+                typedCommands += objectTyped ? 1 : 0;
+                typedCallbacks += callbackTyped ? 1 : 0;
+            }
         }
+
+        Console.Error.WriteLine($"[convars] {flagComments} registration(s) commented with their flags; " +
+                                $"{typedCommands} command(s) typed ConCommand, {typedCallbacks} callback(s) typed.");
 
         int accessors = ConVarAccessorNaming.Run(all, ConVarValueTypeNames, ArgRegs());
         Console.Error.WriteLine($"[convars] {accessors} convar function(s) named.");
@@ -562,6 +581,32 @@ public static unsafe class ConVarNaming
         return (perm & SegPermWrite) != 0;
     }
 
+    // A string in read-only, non-executable data: printable bytes up to a terminating zero.
+    private static bool InReadOnlyString(ulong ea)
+    {
+        void* seg = IdaNative.getseg(ea);
+        if (seg == null || (((byte*)seg)[42] & (SegPermWrite | SegPermExecute)) != 0)
+        {
+            return false;
+        }
+
+        for (ulong i = 0; i < 256 && IdaNative.is_loaded(ea + i) != 0; i++)
+        {
+            byte value = IdaNative.get_byte(ea + i);
+            if (value == 0)
+            {
+                return true;
+            }
+
+            if (value is < 0x20 or > 0x7E)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsFunctionStart(ulong ea)
     {
         void* pfn = IdaNative.get_func(ea);
@@ -662,6 +707,8 @@ public static unsafe class ConVarNaming
     {
         var prof = new CtorProfile { Addr = ctor };
         var votes = new int[ArgSlots, ArgRoles];
+        // Zero is no evidence of any role, except for flags that are often none at all.
+        var zeros = new int[ArgSlots];
 
         foreach (ulong from in Xrefs.AllTo(ctor))
         {
@@ -675,8 +722,14 @@ public static unsafe class ConVarNaming
 
             for (int i = 0; i < ArgSlots; i++)
             {
-                if (!ArgValue(from, pfnStart, i, out ulong v) || v == 0)
+                if (!ArgValue(from, pfnStart, i, out ulong v))
                 {
+                    continue;
+                }
+
+                if (v == 0)
+                {
+                    zeros[i]++;
                     continue;
                 }
 
@@ -699,7 +752,9 @@ public static unsafe class ConVarNaming
                 {
                     votes[i, (int)ArgRole.Object]++;
                 }
-                else if (v < 0x100000000ul)
+                // A Linux image starts at 0, so a pointer to read-only data (an empty default string) is as
+                // small as a flag value; a value that points at a string is none.
+                else if (v < 0x100000000ul && !InReadOnlyString(v))
                 {
                     votes[i, (int)ArgRole.Flags]++;
                 }
@@ -707,12 +762,18 @@ public static unsafe class ConVarNaming
         }
 
         var taken = new bool[ArgSlots];
-        for (int r = 1; r < ArgRoles; r++)
+        // The flags come next to the description: before it for a convar (after the default value, which a
+        // small integer default would otherwise pass for flags), after it for a command. So they are
+        // assigned last, next to the description once it is known.
+        int description = -1;
+        foreach (ArgRole role in (ArgRole[])[ArgRole.Object, ArgRole.Name, ArgRole.Description, ArgRole.Callback, ArgRole.Flags])
         {
+            int r = (int)role;
             int best = -1, top = 0;
             for (int i = 0; i < ArgSlots; i++)
             {
-                if (taken[i] || votes[i, r] <= top)
+                if (taken[i] || votes[i, r] <= top ||
+                    role == ArgRole.Flags && description >= 0 && Math.Abs(i - description) != 1)
                 {
                     continue;
                 }
@@ -721,13 +782,28 @@ public static unsafe class ConVarNaming
                 best = i;
             }
 
+            // Next to the description, registrations without flags pass zero; they count for the slot too, after
+            // the flag values themselves.
+            if (role == ArgRole.Flags && description >= 0)
+            {
+                best = new[] { description - 1, description + 1 }
+                    .Where(i => i >= 0 && i < ArgSlots && !taken[i] && votes[i, r] + zeros[i] > 0)
+                    .OrderByDescending(i => votes[i, r]).ThenByDescending(i => zeros[i])
+                    .DefaultIfEmpty(-1).First();
+                top = best < 0 ? 0 : votes[best, r] + zeros[best];
+            }
+
             if (best < 0 || top * 3 < prof.Sites)
             {
                 continue;
             }
 
-            prof.Roles[best] = (ArgRole)r;
+            prof.Roles[best] = role;
             taken[best] = true;
+            if (role == ArgRole.Description)
+            {
+                description = best;
+            }
         }
 
         return prof;
@@ -864,7 +940,8 @@ public static unsafe class ConVarNaming
                 Ctor = prof.Addr,
             };
 
-            if (flagSlot >= 0 && ArgValue(from, pfnStart, flagSlot, out ulong rawFlags) && rawFlags < 0x100000000ul)
+            // FCVAR_ flags reach bit 32 (FCVAR_DEFENSIVE); anything far beyond is no flag value.
+            if (flagSlot >= 0 && ArgValue(from, pfnStart, flagSlot, out ulong rawFlags) && rawFlags < 1ul << 48)
             {
                 cv.Flags = rawFlags;
                 cv.HasFlags = true;
@@ -875,9 +952,15 @@ public static unsafe class ConVarNaming
                 cv.Description = ReadStringAt(rawDesc);
             }
 
-            cv.Callback = cbSlot >= 0 && ArgValue(from, pfnStart, cbSlot, out ulong cb)
-                ? cb
-                : CallbackNear(from, pfnStart);
+            if (cbSlot >= 0 && ArgValue(from, pfnStart, cbSlot, out ulong cb))
+            {
+                cv.Callback = cb;
+                cv.CallbackSlot = cbSlot;
+            }
+            else
+            {
+                cv.Callback = CallbackNear(from, pfnStart);
+            }
             cv.ValueType = ConVarTypeRecovery.FromCall(from, pfnStart, obj, flagSlot, ArgRegs(),
                 ConVarValueTypeNames.Length, out cv.InitAt, out cv.ReferenceStyle);
 
@@ -1228,6 +1311,68 @@ public static unsafe class ConVarNaming
         }
 
         return SetName(cv.Callback, wanted, SnNoCheck | SnForce);
+    }
+
+    /// <summary>
+    /// How a command's registration passes its callback (ConCommandCallbackInfo_t: the function, then the
+    /// interface/void/context-less bits). SysV passes the 16-byte struct in two registers, the bits in the one
+    /// after the function; MSVC builds it on the stack and sets the bits with the last and/or on its flag byte.
+    /// Null when the registration does not show it.
+    /// </summary>
+    private static int? CommandCallbackKind(ConVarInfo cv)
+    {
+        ulong pfnStart = FuncStart(cv.RegisteredAt);
+        if (pfnStart == BadAddr)
+        {
+            return null;
+        }
+
+        int[] regs = ArgRegs();
+        if (regs.Length == 6)
+        {
+            return cv.CallbackSlot >= 0 && cv.CallbackSlot + 1 < regs.Length &&
+                   TrackedValue(cv.RegisteredAt, regs[cv.CallbackSlot + 1], out ulong bits)
+                ? (int)(bits & 7)
+                : null;
+        }
+
+        byte* buf = stackalloc byte[Insn.BufferSize];
+        ulong ea = cv.RegisteredAt;
+        for (int i = 0; i < MaxCallbackInsns * 2; i++)
+        {
+            ea = IdaNative.prev_head(ea, pfnStart);
+            if (ea == BadAddr || !Insn.TryDecode(ea, buf) || Insn.IsCall(buf))
+            {
+                break;
+            }
+
+            if (Insn.OpType(buf, 0) is not (Insn.OpDispl or Insn.OpPhrase) || Insn.OpType(buf, 1) != Insn.OpImm ||
+                Insn.OpWidth(buf, 0) != 0)
+            {
+                continue;
+            }
+
+            string mnemonic = Mnemonic(ea);
+            ulong imm = Insn.OpValue(buf, 1) & 0xFF;
+            if (mnemonic == "and" && (imm & 7) == 0)
+            {
+                return 0;
+            }
+
+            if (mnemonic == "or" && (imm & ~7ul) == 0)
+            {
+                return (int)imm;
+            }
+        }
+
+        return null;
+    }
+
+    private static string Mnemonic(ulong ea)
+    {
+        var text = new QString();
+        try { return IdaNative.print_insn_mnem(&text, ea) > 0 ? text.Read() : string.Empty; }
+        finally { text.Dispose(); }
     }
 
     // func_t::flags FUNC_THUNK.

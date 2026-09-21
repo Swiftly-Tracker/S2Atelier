@@ -24,11 +24,19 @@ internal sealed class CliOptions
 
     public bool NameLogChannels { get; private set; }
 
+    public bool NameEntityClasses { get; private set; }
+
+    public bool TypeGlobals { get; private set; }
+
     public string? ImportProtobufsDir { get; private set; }
 
     public string? ImportSchemaPath { get; private set; }
 
     public string? ConVarTypesPath { get; private set; }
+
+    public string? VTableBaselineDirectory { get; private set; }
+
+    public string? VTableSnapshotDirectory { get; private set; }
 
     public bool ImportInterfaces { get; private set; }
 
@@ -93,6 +101,14 @@ internal sealed class CliOptions
                     options.NameConVars = true;
                     break;
 
+                case "--name-entity-classes":
+                    options.NameEntityClasses = true;
+                    break;
+
+                case "--type-globals":
+                    options.TypeGlobals = true;
+                    break;
+
                 case "--name-log-channels":
                     options.NameLogChannels = true;
                     break;
@@ -119,6 +135,23 @@ internal sealed class CliOptions
 
                 case "--convar-types":
                     options.ParseError = "--convar-types requires a convars.json path.";
+                    break;
+
+                // --vtable-baseline and --vtable-snapshot are the names from when the snapshot only held vtables.
+                case "--baseline" or "--vtable-baseline" when i + 1 < args.Length:
+                    options.VTableBaselineDirectory = args[++i];
+                    break;
+
+                case "--baseline" or "--vtable-baseline":
+                    options.ParseError = "--baseline requires a directory path.";
+                    break;
+
+                case "--snapshot" or "--vtable-snapshot" when i + 1 < args.Length:
+                    options.VTableSnapshotDirectory = args[++i];
+                    break;
+
+                case "--snapshot" or "--vtable-snapshot":
+                    options.ParseError = "--snapshot requires a directory path.";
                     break;
 
                 case "--import-interfaces":
@@ -195,9 +228,9 @@ internal sealed class CliOptions
                     : "--import-schema requires --hl2sdk.";
             return false;
         }
-        if (!needsHl2Sdk && Hl2SdkPath != null)
+        if (!needsHl2Sdk && !NameEntityClasses && !TypeGlobals && Hl2SdkPath != null)
         {
-            error = "--hl2sdk requires --import-schema or --import-interfaces.";
+            error = "--hl2sdk requires --import-schema, --import-interfaces, --name-entity-classes or --type-globals.";
             return false;
         }
         if (ImportSchemaPath == null && !SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase))
@@ -205,6 +238,13 @@ internal sealed class CliOptions
             error = "--schema-project requires --import-schema.";
             return false;
         }
+        if (VTableBaselineDirectory != null && !Directory.Exists(VTableBaselineDirectory))
+        {
+            error = $"vtable baseline directory does not exist: '{VTableBaselineDirectory}'.";
+            return false;
+        }
+        VTableBaselineDirectory = VTableBaselineDirectory == null ? null : Path.GetFullPath(VTableBaselineDirectory);
+        VTableSnapshotDirectory = VTableSnapshotDirectory == null ? null : Path.GetFullPath(VTableSnapshotDirectory);
         if (!needsHl2Sdk)
         {
             return true;
@@ -244,11 +284,8 @@ internal sealed class CliOptions
             error = $"Schema JSON does not exist: '{ImportSchemaPath}'.";
             return false;
         }
-        foreach (string required in new[]
-                 {
-                     "public", Path.Combine("game", "shared"), Path.Combine("game", "server"),
-                     Path.Combine("thirdparty", "protobuf-3.21.8", "src"), "common",
-                 })
+        // Only public/ is common to every SDK fork; the other include directories are used when present.
+        foreach (string required in new[] { "public" })
         {
             if (!Directory.Exists(Path.Combine(Hl2SdkPath, required)))
             {

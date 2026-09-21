@@ -7,6 +7,124 @@ internal static class SdkVTableTests
     private static void Check(bool condition, string message)
     { if (!condition) throw new Exception(message); }
 
+    internal static void Drift()
+    {
+        string?[] names = ["Init", "Shutdown", "Think", "Save", "Load"];
+        string?[] prints = ["A", "B", "C", "D", "E"];
+        List<string> Recorded(string?[] fingerprints, string?[] methods)
+            => [.. fingerprints.Zip(methods, (f, n) => $"{f ?? "-"} {n ?? "-"}")];
+
+        Check(VTableDrift.Conflicts(Recorded(prints, names), prints, names).Count == 0, "unchanged build has no drift");
+        // Valve inserted a method before Think: C, D and E moved one slot down; a stale SDK names them by position.
+        string?[] shifted = ["A", "B", "X", "C", "D", "E"];
+        string?[] stale = ["Init", "Shutdown", "Think", "Save", "Load", "unk"];
+        var conflicts = VTableDrift.Conflicts(Recorded(prints, names), shifted, stale);
+        Check(conflicts.Count == 3 && conflicts[0] == (2, 3), "insertion shows as matched functions renamed");
+        // The SDK was fixed: the new method is declared, the others follow it.
+        string?[] fixedSdk = ["Init", "Shutdown", "Added", "Think", "Save", "Load"];
+        Check(VTableDrift.Conflicts(Recorded(prints, names), shifted, fixedSdk).Count == 0, "fixed SDK agrees again");
+        // A body that repeats in the table, or a stub without a fingerprint, is no evidence.
+        string?[] repeated = ["A", "A", null, "D", "E"];
+        Check(VTableDrift.Conflicts(Recorded(repeated, names), ["A", "A", null, "D", "E"],
+            ["Shutdown", "Init", "Save", "Save", "Load"]).Count == 0, "repeated and missing fingerprints ignored");
+    }
+
+    internal static void SlotOwners()
+    {
+        // CDerived : CMiddle : CBase, and CUnrelated sharing a folded body with CBase.
+        var chains = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["CBase"] = ["CBase"],
+            ["CMiddle"] = ["CMiddle", "CBase"],
+            ["CDerived"] = ["CDerived", "CMiddle", "CBase"],
+            ["CUnrelated"] = ["CUnrelated"],
+        };
+
+        Check(VTableSlotNaming.Owner(["CDerived"], chains) == "CDerived", "one class owns its own slot");
+        Check(VTableSlotNaming.Owner(["CDerived", "CMiddle", "CBase"], chains) == "CBase",
+            "an inherited implementation belongs to the least derived class");
+        Check(VTableSlotNaming.Owner(["CDerived", "CMiddle"], chains) == "CMiddle",
+            "the base that does not hold the function is not chosen");
+        Check(VTableSlotNaming.Owner(["CBase", "CUnrelated"], chains) == null, "a folded body has no owner");
+        Check(VTableSlotNaming.Owner(["CDerived", "CUnknown"], chains) == null, "a class without RTTI bases decides nothing");
+    }
+
+    internal static void Health()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"s2atelier-health-{Guid.NewGuid():N}");
+        try
+        {
+            var before = new ModuleHealth("server.dll");
+            before.Count("entity-classes.classes", 516);
+            before.Count("log-channels.found", 53);
+            before.Count("convars.found", 100);
+            before.Warn("vtable-drift", ["CFoo: SDK names held."]);
+            string path = Path.Combine(directory, ModuleHealth.FileName("server.dll"));
+            var written = before.Write(path, null);
+            Check(written.Regressions.Count == 0, "no baseline, no regression");
+            var baseline = ModuleHealth.Load(path);
+            Check(baseline != null && baseline.Counts["entity-classes.classes"] == 516 &&
+                  baseline.Warnings.Single() == "[vtable-drift] CFoo: SDK names held.", "report round trips");
+
+            var after = new ModuleHealth("server.dll");
+            after.Count("entity-classes.classes", 12);
+            after.Count("log-channels.found", 50);
+            after.Count("convars.found", 94);
+            var regressions = after.Regressions(baseline);
+            // 516 -> 12 fell; 53 -> 50 is within the noise; 100 -> 94 is a small absolute drop over 5%.
+            Check(regressions.Count == 1 && regressions[0].StartsWith("entity-classes.classes: 516 -> 12", StringComparison.Ordinal),
+                "only a large drop regresses");
+            Check(new ModuleHealth("server.dll").Regressions(baseline).Count == 3, "a pass that stopped counting regresses");
+            Check(ModuleHealth.Load(Path.Combine(directory, "missing.json")) == null, "missing baseline");
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+
+        Check(EntityClassNaming.CallbackName("m_pfnRegisterPulseBindings") == "RegisterPulseBindings" &&
+              EntityClassNaming.CallbackName("m_NameToThinkFunc") == "NameToThinkFunc" &&
+              EntityClassNaming.CallbackName("Other") == "Other", "callback names drop the member prefix");
+    }
+
+    internal static void GlobalVars()
+    {
+        const byte Byte = 0, Dword = 2, Float = 3, Qword = 7;
+        Dictionary<(ulong, byte), int> Seen(params (ulong Offset, byte Width, int Count)[] accesses)
+            => accesses.ToDictionary(x => (x.Offset, x.Width), x => x.Count);
+
+        Check(GlobalVarsTyping.DetectEra(0x20, Seen((0x2C, Float, 450))).Era.Name == "A", "warn at 0x20 is era A");
+        Check(GlobalVarsTyping.DetectEra(0x28, Seen((0x28, Qword, 330), (0x34, Float, 330))).Era.Name == "B",
+            "checked accessors read the callback in era B");
+        Check(GlobalVarsTyping.DetectEra(0x28, Seen((0x30, Float, 900), (0x44, Dword, 300))).Era.Name == "C",
+            "no callback reads and no async flag is era C");
+        Check(GlobalVarsTyping.DetectEra(0x28, Seen((0x30, Float, 900), (0x54, Byte, 3))).Era.Name == "D",
+            "the async flag at 0x54 is era D");
+
+        foreach (var era in GlobalVarsTyping.Eras)
+        {
+            var fields = era.Fields.OrderBy(x => x.Offset).ToList();
+            Check(fields.Zip(fields.Skip(1)).All(x => x.First.Offset < x.Second.Offset), $"era {era.Name} fields ascend");
+            Check(fields.Single(x => x.Name == "m_pfnWarningFunc").Offset == era.Warn &&
+                  fields.Single(x => x.Name == "curtime").Offset == era.Curtime &&
+                  fields.Single(x => x.Name == "tickcount").Offset == era.Tickcount &&
+                  fields.Single(x => x.Name == "m_bInSimulation").Offset == era.InSimulation, $"era {era.Name} anchors");
+            Check(GlobalVarsTyping.EraDeclarations(era).Contains("struct CGlobalVarsBase"), $"era {era.Name} declares");
+        }
+
+        var current = GlobalVarsTyping.Eras[^1];
+        var sdk = current.Fields.ToDictionary(x => x.Name, x => x.Offset);
+        Check(GlobalVarsTyping.Differences(current, sdk, 0x60).Count == 0, "a matching SDK layout is taken");
+        sdk["curtime"] = 0x34;
+        Check(GlobalVarsTyping.Differences(current, sdk, 0x60).Single() == "curtime at 0x34, build 0x30", "a moved field is reported");
+
+        Check(ConVarRegistrationNotes.Describe(0) == "FCVAR_NONE", "no flags");
+        Check(ConVarRegistrationNotes.Describe((1ul << 13) | (1ul << 19)) == "FCVAR_REPLICATED | FCVAR_RELEASE", "flag names");
+        Check(ConVarRegistrationNotes.Describe((1ul << 32) | (1ul << 40)) == "FCVAR_DEFENSIVE | 0x10000000000", "unknown bits in hex");
+        Check(ConVarRegistrationNotes.Describe((1ul << 30) | (1ul << 34)) == "FCVAR_SNAPSHOT_IGNORED | FCVAR_GAMEINFO_CANNOT_OVERRIDE",
+            "the bits hl2sdk does not name");
+    }
+
     internal static void Managed()
     {
         var classes = new[] { Class("Base"), Class("Other"), Class("Derived", "Base", "Other") }.ToDictionary(x => x.Name);

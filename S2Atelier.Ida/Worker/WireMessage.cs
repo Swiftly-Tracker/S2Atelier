@@ -17,6 +17,10 @@ internal sealed class WireMessage
     public string? ImportSchemaPath { get; init; }
     public string? ConVarTypesPath { get; init; }
     public bool NameLogChannels { get; init; }
+    public string? VTableBaselineDirectory { get; init; }
+    public string? VTableSnapshotDirectory { get; init; }
+    public bool NameEntityClasses { get; init; }
+    public bool TypeGlobals { get; init; }
     public string? Hl2SdkPath { get; init; }
     public bool ImportInterfaces { get; init; }
     public string SchemaProject { get; init; } = "auto";

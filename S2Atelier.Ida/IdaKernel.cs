@@ -149,7 +149,9 @@ public static unsafe class IdaKernel
         string path, bool save, bool patchPlt = false, bool nameConVars = false, bool nameFnPtrTables = false,
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
         string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
-        Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false)
+        Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false,
+        string? vtableBaselineDirectory = null, string? vtableSnapshotDirectory = null, bool nameEntityClasses = false,
+        bool typeGlobals = false)
     {
         AssertOwner();
 
@@ -177,7 +179,8 @@ public static unsafe class IdaKernel
             bool runSchema = importSchemaPath != null && hl2SdkPath != null;
             bool runProtobufs = !string.IsNullOrEmpty(importProtobufsDir);
             int passCount = new[]
-                    { runInterfaces, runSchema, patchPlt, nameConVars, nameLogChannels, nameFnPtrTables, runProtobufs }
+                    { runInterfaces, runSchema, runInterfaces || runSchema, patchPlt, nameConVars, nameLogChannels,
+                      nameFnPtrTables, runProtobufs, nameEntityClasses, typeGlobals }
                 .Count(x => x);
             // Auto-analysis is only part of the job: the later passes can take minutes on large
             // binaries, so they share the rest of the bar instead of leaving it at 100%.
@@ -198,17 +201,110 @@ public static unsafe class IdaKernel
                 ? ValveInterfaceImport.Run(full, hl2SdkPath!)
                 : new ValveInterfaceImportResult(false);
 
+            // Both the schema pass and the interface step name slots from hl2sdk; one gate holds a drifted SDK
+            // class back in both and records the module's snapshot.
+            string module = Path.GetFileName(full);
+            module = module.EndsWith(".i64", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
+            VTableDrift? drift = vtableBaselineDirectory == null && vtableSnapshotDirectory == null
+                ? null
+                : new VTableDrift(module, vtableBaselineDirectory == null
+                    ? null
+                    : Path.Combine(vtableBaselineDirectory, VTableDrift.SnapshotName(module)));
+            var health = new ModuleHealth(module);
+            if (runInterfaces)
+            {
+                health.Count("interfaces.globals", interfaceResult.GlobalsRenamed);
+                health.Count("interfaces.vtables", interfaceResult.VTablesImported);
+            }
+
             if (runSchema) BeginPass("schema");
             var schemaResult = runSchema
-                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject)
+                ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject, drift)
                 : new SchemaImportResult(false);
+            if (schemaResult.Applicable)
+            {
+                health.Count("schema.types", schemaResult.TypesImported);
+                health.Count("schema.vtables", schemaResult.VTablesMatched);
+                health.Count("schema.functions-bound", schemaResult.FunctionsBound);
+                health.Warn("schema-layout", schemaResult.LayoutMismatches ?? []);
+            }
 
             if (runInterfaces || runSchema)
             {
+                // Classes that implement SDK interfaces, whether or not the module has schema classes.
+                BeginPass("interface vtables");
+                SdkInterfaceSummary implementations = SdkInterfaceBinding.Run(hl2SdkPath!, SchemaImport.DetectTargetPlatform(),
+                    schemaResult.SchemaClasses ?? new HashSet<string>(), drift, Console.Error.WriteLine);
+                Console.Error.WriteLine($"[interface-vtables] {Path.GetFileName(full)}: tables={implementations.Tables}, " +
+                    $"bound={implementations.Binding.Bound}, skipped={implementations.Binding.Skipped}, " +
+                    $"conflicts={implementations.Binding.Conflicts}.");
+                foreach (string held in drift?.Held ?? [])
+                {
+                    Console.Error.WriteLine($"[vtable-drift] {held}");
+                }
+
+                health.Count("interface-vtables.tables", implementations.Tables);
+                health.Count("interface-vtables.bound", implementations.Binding.Bound);
+                health.Warn("vtable-drift", drift?.Held ?? []);
+
+                if (drift != null && vtableSnapshotDirectory != null)
+                {
+                    drift.Write(Path.Combine(vtableSnapshotDirectory, VTableDrift.SnapshotName(module)));
+                }
+
+                // Whatever the SDK does not name keeps a slot name of its own, in every class's vtable.
+                var namedSlots = VTableSlotNaming.Run(SchemaImport.DetectTargetPlatform(), Console.Error.WriteLine);
+                Console.Error.WriteLine($"[vtable-slots] {Path.GetFileName(full)}: tables={namedSlots.Tables}, " +
+                    $"named={namedSlots.Named}, ambiguous={namedSlots.Ambiguous}.");
+                health.Count("vtable-slots.tables", namedSlots.Tables);
+
                 Console.Error.WriteLine($"[types] {TemplateAliases.Run()} template alias(es) created.");
                 // The imports parse with IDAClang; the later passes, like the GUI, use the legacy parser and
                 // reach template instantiations through the aliases.
                 SchemaImport.ResetParser();
+            }
+
+            if (nameEntityClasses)
+            {
+                BeginPass("entity classes");
+                var entities = EntityClassNaming.Apply(hl2SdkPath, SchemaImport.DetectTargetPlatform(),
+                    vtableSnapshotDirectory == null ? null : Path.Combine(vtableSnapshotDirectory, EntityClassNaming.GraphName(module)),
+                    Console.Error.WriteLine);
+                Console.Error.WriteLine($"[entity-classes] {Path.GetFileName(full)}: layout={entities.Layout}, " +
+                    $"classes={entities.ClassesFound}, abstract-infos={entities.AbstractInfos}, named={entities.Named}, " +
+                    $"typed={entities.Typed}, infos-named={entities.InfosNamed}, schema-bindings={entities.SchemaBindingsNamed}, " +
+                    $"data-maps={entities.DataMapsNamed}, skipped={entities.Skipped}, " +
+                    $"round-trip-failures={entities.RoundTripFailures}, dangling-bases={entities.DanglingBases}.");
+                health.Count("entity-classes.classes", entities.ClassesFound);
+                health.Count("entity-classes.typed", entities.Typed);
+                health.Count("entity-classes.schema-bindings", entities.SchemaBindingsNamed);
+                health.Count("entity-classes.data-maps", entities.DataMapsNamed);
+                var entityWarnings = new List<string>();
+                if (entities.Layout.StartsWith("drift", StringComparison.Ordinal)) entityWarnings.Add(entities.Layout);
+                if (entities.RoundTripFailures > 0) entityWarnings.Add($"{entities.RoundTripFailures} round-trip failure(s)");
+                if (entities.DanglingBases > 0) entityWarnings.Add($"{entities.DanglingBases} base info(s) that are no class info");
+                health.Warn("entity-classes", entityWarnings);
+            }
+
+            if (typeGlobals)
+            {
+                BeginPass("global vars");
+                var globals = GlobalVarsTyping.Apply(module, hl2SdkPath, SchemaImport.DetectTargetPlatform(),
+                    Console.Error.WriteLine);
+                static string Hex(ulong? value) => value is ulong v ? $"0x{v:X}" : "-";
+                Console.Error.WriteLine($"[globals] {Path.GetFileName(full)}: era={globals.Era}, types={globals.Types}, " +
+                    $"gpGlobals={Hex(globals.GpGlobals)}, default={Hex(globals.FallbackGlobals)}, " +
+                    $"warning-func={Hex(globals.WarningFunc)}, client-offset={Hex(globals.ClientOffset)}, " +
+                    $"server-offset={Hex(globals.ServerOffset)}, time-scope-helpers={globals.Helpers}, skipped={globals.Skipped}.");
+                foreach (string warning in globals.Warnings)
+                {
+                    Console.Error.WriteLine($"[globals] {warning}");
+                }
+
+                health.Count("globals.found", (globals.GpGlobals != null ? 1 : 0) + (globals.ClientOffset != null ? 1 : 0) +
+                                              (globals.ServerOffset != null ? 1 : 0));
+                health.Count("globals.time-scope-helpers", globals.Helpers);
+                health.Warn("globals", globals.Warnings);
             }
 
             if (patchPlt) BeginPass("plt");
@@ -235,6 +331,28 @@ public static unsafe class IdaKernel
             var protoResult = runProtobufs
                 ? ProtoImport.Run(importProtobufsDir!)
                 : new ProtoImportResult(false, 0, 0, 0);
+
+            if (pltResult.Applicable) health.Count("plt.patched", pltResult.Patched);
+            if (s2fResult.Applicable)
+            {
+                health.Count("convars.found", s2fResult.Found);
+                health.Count("convars.typed", s2fResult.TypedObjects);
+            }
+
+            if (logResult.Applicable) health.Count("log-channels.found", logResult.Found);
+            if (nameFnPtrTables) health.Count("fnptr-tables.found", fnPtrResult.Found);
+            if (protoResult.Applicable) health.Count("protobufs.types", protoResult.TypesDefined);
+            if (vtableSnapshotDirectory != null)
+            {
+                var baseline = vtableBaselineDirectory == null
+                    ? null
+                    : ModuleHealth.Load(Path.Combine(vtableBaselineDirectory, ModuleHealth.FileName(module)));
+                var report = health.Write(Path.Combine(vtableSnapshotDirectory, ModuleHealth.FileName(module)), baseline);
+                foreach (string regression in report.Regressions)
+                {
+                    Console.Error.WriteLine($"[health] {Path.GetFileName(full)}: fell since the baseline: {regression}");
+                }
+            }
 
             onStage?.Invoke(save ? "saving" : "closing");
             onProgress?.Invoke(1.0, 0);

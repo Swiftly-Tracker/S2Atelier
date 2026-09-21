@@ -88,6 +88,8 @@ public static class Entrypoint
                            $"SDK {options.SdkVersion}, save={!options.NoSave}, patch-plt={options.PatchPlt}, " +
                            $"name-convars={options.NameConVars}, convar-types={options.ConVarTypesPath ?? "off"}, " +
                            $"name-log-channels={options.NameLogChannels}, " +
+                           $"name-entity-classes={options.NameEntityClasses}, " +
+                           $"type-globals={options.TypeGlobals}, " +
                            $"name-fnptr-tables={options.NameFnPtrTables}, " +
                            $"import-protobufs={options.ImportProtobufsDir ?? "off"}, " +
                            $"import-interfaces={options.ImportInterfaces}, " +
@@ -99,10 +101,13 @@ public static class Entrypoint
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
                 options.SchemaProject, options.ImportInterfaces, options.Cores, options.ConVarTypesPath,
-                options.NameLogChannels)
+                options.NameLogChannels, options.VTableBaselineDirectory, options.VTableSnapshotDirectory,
+                options.NameEntityClasses, options.TypeGlobals)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
-                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath, options.NameLogChannels);
+                options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath, options.NameLogChannels,
+                options.VTableBaselineDirectory, options.VTableSnapshotDirectory, options.NameEntityClasses,
+                options.TypeGlobals);
 
         Console.WriteLine();
 
@@ -235,7 +240,8 @@ public static class Entrypoint
     private static IReadOnlyList<BatchItem> RunPlain(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, string? convarTypesPath, bool nameLogChannels)
+        string schemaProject, bool importInterfaces, string? convarTypesPath, bool nameLogChannels,
+        string? vtableBaseline, string? vtableSnapshot, bool nameEntityClasses, bool typeGlobals)
         => pool.RunBatch(
             paths,
             save,
@@ -271,12 +277,17 @@ public static class Entrypoint
                 : $"[FAILED] {Path.GetFileName(item.Path)}: {item.Error}"),
             importInterfaces: importInterfaces,
             convarTypesPath: convarTypesPath,
-            nameLogChannels: nameLogChannels);
+            nameLogChannels: nameLogChannels,
+            vtableBaselineDirectory: vtableBaseline,
+            vtableSnapshotDirectory: vtableSnapshot,
+            nameEntityClasses: nameEntityClasses,
+            typeGlobals: typeGlobals);
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
-        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath, bool nameLogChannels)
+        string schemaProject, bool importInterfaces, int cores, string? convarTypesPath, bool nameLogChannels,
+        string? vtableBaseline, string? vtableSnapshot, bool nameEntityClasses, bool typeGlobals)
     {
         IReadOnlyList<BatchItem> results = [];
         var previousLog = pool.Log;
@@ -341,7 +352,11 @@ public static class Entrypoint
                         onStage: (worker, stage) =>
                             tasks[worker].Description = $"{names[worker]} [grey]{Markup.Escape(stage)}[/]",
                         convarTypesPath: convarTypesPath,
-                        nameLogChannels: nameLogChannels);
+                        nameLogChannels: nameLogChannels,
+                        vtableBaselineDirectory: vtableBaseline,
+                        vtableSnapshotDirectory: vtableSnapshot,
+                        nameEntityClasses: nameEntityClasses,
+                        typeGlobals: typeGlobals);
                 });
         }
         finally
@@ -385,6 +400,19 @@ public static class Entrypoint
                                   Name the globals LoggingSystem_RegisterLoggingChannel results are
                                   stored in LOG_<CHANNEL NAME>, typed LoggingChannelID_t when the SDK
                                   headers were imported.
+              --name-entity-classes
+                                  Name and type every entity class's CEntityClass static and
+                                  CEntityClassInfo, its GetEntityClassInternal accessor, cached
+                                  pointer, guards, callbacks, schema binding and data map. With
+                                  --hl2sdk the layout comes from entity2/entityclass.h and is checked
+                                  against the binary first; a layout the binary contradicts is
+                                  reported and its types are not applied. With --snapshot,
+                                  the entity class graph is written next to the snapshot.
+              --type-globals      Find the module's CGlobalVars and type it for its build: a game DLL's
+                                  gpGlobals, default instance and usage-warning callback (from
+                                  SetGlobals), engine2's two embedded instances and its time-scope
+                                  helpers. The layout era is read from the code; hl2sdk's
+                                  CGlobalVarsBase is used when it matches, the era's table otherwise.
               --name-fnptr-tables
                                   Find name-resolution cascades anywhere in the binary and rename
                                   the resolved sub_X functions: both "cmp arg, &sub_X ; ... ;
@@ -415,6 +443,15 @@ public static class Entrypoint
                                   names, apply interface pointer types, and import reliable virtual
                                   tables through IDAClang. Requires --hl2sdk; sdk.json is not needed.
               --hl2sdk <dir>      HL2SDK root used by --import-interfaces and/or --import-schema.
+              --snapshot <dir>    Write this build's snapshot to <dir>, the baseline of the next build:
+                                  <binary>.vtables.json (the SDK-named vtables' slots), <binary>.health.json
+                                  (what each pass found, and the SDK disagreements it held back) and, with
+                                  --name-entity-classes, <binary>.entities.json (the entity class graph).
+              --baseline <dir>    Compare with the previous build's snapshot in <dir>. A class whose
+                                  vtable slots moved so the SDK would rename a known function keeps its
+                                  SDK names back, its vtable commented, until the SDK agrees again; a
+                                  pass whose count fell well below the baseline's is reported.
+                                  (--vtable-snapshot and --vtable-baseline are accepted as well.)
               --schema-project <auto|project>
                                   Project roots to import. Default auto derives client/server/etc.
                                   from the binary filename (including libNAME.so).
