@@ -961,7 +961,7 @@ static void TestInterfaceCliCombinations()
 
     CliOptions standalone = CliOptions.Parse(["server.dll", "--hl2sdk", sdk.Path]);
     True(!standalone.ValidateSchemaOptions(out string? standaloneError));
-    Contains(standaloneError!, "requires --import-schema or --import-interfaces");
+    Contains(standaloneError!, "requires --import-schema, --import-interfaces or --name-entity-classes");
 
     CliOptions interfacesOnly = CliOptions.Parse(
         ["server.dll", "--import-interfaces", "--hl2sdk", sdk.Path]);

@@ -24,6 +24,8 @@ internal sealed class CliOptions
 
     public bool NameLogChannels { get; private set; }
 
+    public bool NameEntityClasses { get; private set; }
+
     public string? ImportProtobufsDir { get; private set; }
 
     public string? ImportSchemaPath { get; private set; }
@@ -95,6 +97,10 @@ internal sealed class CliOptions
 
                 case "--name-convars":
                     options.NameConVars = true;
+                    break;
+
+                case "--name-entity-classes":
+                    options.NameEntityClasses = true;
                     break;
 
                 case "--name-log-channels":
@@ -215,7 +221,7 @@ internal sealed class CliOptions
                     : "--import-schema requires --hl2sdk.";
             return false;
         }
-        if (!needsHl2Sdk && Hl2SdkPath != null)
+        if (!needsHl2Sdk && !NameEntityClasses && Hl2SdkPath != null)
         {
             error = "--hl2sdk requires --import-schema or --import-interfaces.";
             return false;

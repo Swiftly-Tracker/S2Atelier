@@ -150,7 +150,7 @@ public static unsafe class IdaKernel
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
         string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
         Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false,
-        string? vtableBaselineDirectory = null, string? vtableSnapshotDirectory = null)
+        string? vtableBaselineDirectory = null, string? vtableSnapshotDirectory = null, bool nameEntityClasses = false)
     {
         AssertOwner();
 
@@ -179,7 +179,7 @@ public static unsafe class IdaKernel
             bool runProtobufs = !string.IsNullOrEmpty(importProtobufsDir);
             int passCount = new[]
                     { runInterfaces, runSchema, runInterfaces || runSchema, patchPlt, nameConVars, nameLogChannels,
-                      nameFnPtrTables, runProtobufs }
+                      nameFnPtrTables, runProtobufs, nameEntityClasses }
                 .Count(x => x);
             // Auto-analysis is only part of the job: the later passes can take minutes on large
             // binaries, so they share the rest of the bar instead of leaving it at 100%.
@@ -243,6 +243,19 @@ public static unsafe class IdaKernel
                 // The imports parse with IDAClang; the later passes, like the GUI, use the legacy parser and
                 // reach template instantiations through the aliases.
                 SchemaImport.ResetParser();
+            }
+
+            if (nameEntityClasses)
+            {
+                BeginPass("entity classes");
+                var entities = EntityClassNaming.Apply(hl2SdkPath, SchemaImport.DetectTargetPlatform(),
+                    vtableSnapshotDirectory == null ? null : Path.Combine(vtableSnapshotDirectory, EntityClassNaming.GraphName(module)),
+                    Console.Error.WriteLine);
+                Console.Error.WriteLine($"[entity-classes] {Path.GetFileName(full)}: layout={entities.Layout}, " +
+                    $"classes={entities.ClassesFound}, abstract-infos={entities.AbstractInfos}, named={entities.Named}, " +
+                    $"typed={entities.Typed}, infos-named={entities.InfosNamed}, schema-bindings={entities.SchemaBindingsNamed}, " +
+                    $"data-maps={entities.DataMapsNamed}, skipped={entities.Skipped}, " +
+                    $"round-trip-failures={entities.RoundTripFailures}, dangling-bases={entities.DanglingBases}.");
             }
 
             if (patchPlt) BeginPass("plt");

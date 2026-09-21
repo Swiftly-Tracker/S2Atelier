@@ -88,6 +88,7 @@ public static class Entrypoint
                            $"SDK {options.SdkVersion}, save={!options.NoSave}, patch-plt={options.PatchPlt}, " +
                            $"name-convars={options.NameConVars}, convar-types={options.ConVarTypesPath ?? "off"}, " +
                            $"name-log-channels={options.NameLogChannels}, " +
+                           $"name-entity-classes={options.NameEntityClasses}, " +
                            $"name-fnptr-tables={options.NameFnPtrTables}, " +
                            $"import-protobufs={options.ImportProtobufsDir ?? "off"}, " +
                            $"import-interfaces={options.ImportInterfaces}, " +
@@ -99,11 +100,12 @@ public static class Entrypoint
             ? RunWithLiveProgress(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
                 options.SchemaProject, options.ImportInterfaces, options.Cores, options.ConVarTypesPath,
-                options.NameLogChannels, options.VTableBaselineDirectory, options.VTableSnapshotDirectory)
+                options.NameLogChannels, options.VTableBaselineDirectory, options.VTableSnapshotDirectory,
+                options.NameEntityClasses)
             : RunPlain(pool, matches, !options.NoSave, options.PatchPlt, options.NameConVars,
                 options.NameFnPtrTables, options.ImportProtobufsDir, options.ImportSchemaPath, options.Hl2SdkPath,
                 options.SchemaProject, options.ImportInterfaces, options.ConVarTypesPath, options.NameLogChannels,
-                options.VTableBaselineDirectory, options.VTableSnapshotDirectory);
+                options.VTableBaselineDirectory, options.VTableSnapshotDirectory, options.NameEntityClasses);
 
         Console.WriteLine();
 
@@ -237,7 +239,7 @@ public static class Entrypoint
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
         string schemaProject, bool importInterfaces, string? convarTypesPath, bool nameLogChannels,
-        string? vtableBaseline, string? vtableSnapshot)
+        string? vtableBaseline, string? vtableSnapshot, bool nameEntityClasses)
         => pool.RunBatch(
             paths,
             save,
@@ -275,13 +277,14 @@ public static class Entrypoint
             convarTypesPath: convarTypesPath,
             nameLogChannels: nameLogChannels,
             vtableBaselineDirectory: vtableBaseline,
-            vtableSnapshotDirectory: vtableSnapshot);
+            vtableSnapshotDirectory: vtableSnapshot,
+            nameEntityClasses: nameEntityClasses);
 
     private static IReadOnlyList<BatchItem> RunWithLiveProgress(
         IdaWorkerPool pool, IReadOnlyList<string> paths, bool save, bool patchPlt, bool nameConVars,
         bool nameFnPtrTables, string? importProtobufsDir, string? importSchemaPath, string? hl2SdkPath,
         string schemaProject, bool importInterfaces, int cores, string? convarTypesPath, bool nameLogChannels,
-        string? vtableBaseline, string? vtableSnapshot)
+        string? vtableBaseline, string? vtableSnapshot, bool nameEntityClasses)
     {
         IReadOnlyList<BatchItem> results = [];
         var previousLog = pool.Log;
@@ -348,7 +351,8 @@ public static class Entrypoint
                         convarTypesPath: convarTypesPath,
                         nameLogChannels: nameLogChannels,
                         vtableBaselineDirectory: vtableBaseline,
-                        vtableSnapshotDirectory: vtableSnapshot);
+                        vtableSnapshotDirectory: vtableSnapshot,
+                        nameEntityClasses: nameEntityClasses);
                 });
         }
         finally
@@ -392,6 +396,14 @@ public static class Entrypoint
                                   Name the globals LoggingSystem_RegisterLoggingChannel results are
                                   stored in LOG_<CHANNEL NAME>, typed LoggingChannelID_t when the SDK
                                   headers were imported.
+              --name-entity-classes
+                                  Name and type every entity class's CEntityClass static and
+                                  CEntityClassInfo, its GetEntityClassInternal accessor, cached
+                                  pointer, guards, callbacks, schema binding and data map. With
+                                  --hl2sdk the layout comes from entity2/entityclass.h and is checked
+                                  against the binary first; a layout the binary contradicts is
+                                  reported and its types are not applied. With --snapshot,
+                                  the entity class graph is written next to the snapshot.
               --name-fnptr-tables
                                   Find name-resolution cascades anywhere in the binary and rename
                                   the resolved sub_X functions: both "cmp arg, &sub_X ; ... ;

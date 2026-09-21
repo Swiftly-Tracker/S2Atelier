@@ -19,6 +19,7 @@ internal sealed class WireMessage
     public bool NameLogChannels { get; init; }
     public string? VTableBaselineDirectory { get; init; }
     public string? VTableSnapshotDirectory { get; init; }
+    public bool NameEntityClasses { get; init; }
     public string? Hl2SdkPath { get; init; }
     public bool ImportInterfaces { get; init; }
     public string SchemaProject { get; init; } = "auto";

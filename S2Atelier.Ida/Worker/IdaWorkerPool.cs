@@ -61,7 +61,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
         string? convarTypesPath = null,
         bool nameLogChannels = false,
         string? vtableBaselineDirectory = null,
-        string? vtableSnapshotDirectory = null)
+        string? vtableSnapshotDirectory = null,
+        bool nameEntityClasses = false)
     {
         if (paths.Count == 0)
         {
@@ -91,7 +92,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                         convarTypesPath,
                         nameLogChannels,
                         vtableBaselineDirectory,
-                        vtableSnapshotDirectory);
+                        vtableSnapshotDirectory,
+                        nameEntityClasses);
                     results[index] = item;
                     onFinished?.Invoke(worker.Index, item);
                 }
@@ -141,7 +143,8 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
             string? convarTypesPath = null,
             bool nameLogChannels = false,
             string? vtableBaselineDirectory = null,
-            string? vtableSnapshotDirectory = null)
+            string? vtableSnapshotDirectory = null,
+            bool nameEntityClasses = false)
         {
             string full = Path.GetFullPath(path);
 
@@ -168,6 +171,7 @@ public sealed class IdaWorkerPool(string idaPath, IdaSdkVersion sdk, int size) :
                     NameLogChannels = nameLogChannels,
                     VTableBaselineDirectory = vtableBaselineDirectory,
                     VTableSnapshotDirectory = vtableSnapshotDirectory,
+                    NameEntityClasses = nameEntityClasses,
                     Hl2SdkPath = hl2SdkPath,
                     ImportInterfaces = importInterfaces,
                     SchemaProject = schemaProject,
