@@ -1,0 +1,153 @@
+name: Build
+
+on: [push, workflow_dispatch, pull_request]
+
+permissions:
+  contents: write
+
+jobs:
+  versioning:
+    runs-on: ubuntu-latest
+    outputs:
+      fullSemVer: ${{ steps.version_step.outputs.fullSemVer }}
+      semVer: ${{ steps.version_step.outputs.semVer }}
+      informationalVersion: ${{ steps.version_step.outputs.informationalVersion }}
+      preReleaseLabel: ${{ steps.version_step.outputs.preReleaseLabel }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch all tags
+        run: |
+          git fetch --tags --force
+          git tag
+      - name: Setup GitVersion
+        uses: gittools/actions/gitversion/setup@v3.2.1
+        with:
+          versionSpec: "5.12.x"
+      - name: Determine Version
+        id: version_step
+        uses: gittools/actions/gitversion/execute@v3.2.1
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Run tests
+        run: dotnet run --project S2Atelier.Tests -c Release
+
+  build:
+    needs: [versioning, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+          - rid: linux-x64
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish
+        run: >
+          dotnet publish S2Atelier.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          -p:PublishTrimmed=false
+          -p:Version=${{ needs.versioning.outputs.semVer }}
+          -p:FileVersion=${{ needs.versioning.outputs.semVer }}
+          -p:InformationalVersion=${{ needs.versioning.outputs.informationalVersion }}
+          -o out/${{ matrix.rid }}
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2atelier-${{ matrix.rid }}
+          path: out/${{ matrix.rid }}
+
+  packaging:
+    needs: [versioning, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: s2atelier-*
+          path: artifacts
+
+      - name: Create packages
+        run: |
+          chmod +x artifacts/s2atelier-linux-x64/S2Atelier || true
+
+          mkdir -p release
+          for name in win-x64 linux-x64; do
+            (cd "artifacts/s2atelier-$name" && zip -r "$GITHUB_WORKSPACE/release/S2Atelier-$name.zip" .)
+          done
+          ls -la release
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: S2Atelier-packages
+          path: release/*.zip
+
+  releasing:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [versioning, packaging]
+    runs-on: ubuntu-latest
+    env:
+      TAG_NAME: v${{ needs.versioning.outputs.semVer }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tag
+        run: |
+          TAG_NAME="${{ env.TAG_NAME }}"
+          MSG="Release v${{ needs.versioning.outputs.semVer }}"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+            exit 0
+          fi
+          git tag -a "$TAG_NAME" -m "${MSG}"
+          git push origin "$TAG_NAME"
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: S2Atelier-packages
+          path: ./release
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/S2Atelier-win-x64.zip
+            release/S2Atelier-linux-x64.zip
+          prerelease: ${{ needs.versioning.outputs.preReleaseLabel != '' }}
+          tag_name: ${{ env.TAG_NAME }}
+          name: Release v${{ needs.versioning.outputs.semVer }}
+          body: ${{ needs.versioning.outputs.semVer }}

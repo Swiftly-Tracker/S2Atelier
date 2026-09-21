@@ -1,0 +1,17 @@
+mode: Mainline
+next-version: 1.0.0
+branches:
+  main:
+    regex: ^main$
+    increment: Patch
+    is-mainline: true
+    is-release-branch: true
+ignore:
+  sha: []
+merge-message-formats: {}
+commit-message-incrementing: Enabled
+major-version-bump-message: '\+semver:\s?(breaking|major)'
+minor-version-bump-message: '\+semver:\s?(feature|minor)'
+patch-version-bump-message: '\+semver:\s?(fix|patch)'
+tag-prefix: "v"
+commit-date-format: yyyy-MM-dd
