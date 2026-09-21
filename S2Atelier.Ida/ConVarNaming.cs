@@ -15,6 +15,8 @@ public sealed class ConVarInfo
     // Registered as CConVarRef(name) does: the object, the name and the type in one call.
     public bool ReferenceStyle;
     public ulong Callback = ulong.MaxValue;
+    // The argument slot the registration passes the callback in, or -1 when it was found nearby.
+    public int CallbackSlot = -1;
     public ulong Flags;
     public bool HasFlags;
     // EConVarType (tier1/convar.h), or -1 when the registration does not reveal it.
@@ -123,6 +125,7 @@ public static unsafe class ConVarNaming
         int typedObjects = 0;
         int variables = 0;
         int commands = 0;
+        int flagComments = 0, typedCommands = 0, typedCallbacks = 0;
 
         foreach (var cv in all)
         {
@@ -149,7 +152,22 @@ public static unsafe class ConVarNaming
             {
                 renamedHandlers++;
             }
+
+            if (ConVarRegistrationNotes.CommentFlags(cv))
+            {
+                flagComments++;
+            }
+
+            if (cv.IsCommand)
+            {
+                var (objectTyped, callbackTyped) = ConVarRegistrationNotes.TypeCommand(cv, CommandCallbackKind);
+                typedCommands += objectTyped ? 1 : 0;
+                typedCallbacks += callbackTyped ? 1 : 0;
+            }
         }
+
+        Console.Error.WriteLine($"[convars] {flagComments} registration(s) commented with their flags; " +
+                                $"{typedCommands} command(s) typed ConCommand, {typedCallbacks} callback(s) typed.");
 
         int accessors = ConVarAccessorNaming.Run(all, ConVarValueTypeNames, ArgRegs());
         Console.Error.WriteLine($"[convars] {accessors} convar function(s) named.");
@@ -934,9 +952,15 @@ public static unsafe class ConVarNaming
                 cv.Description = ReadStringAt(rawDesc);
             }
 
-            cv.Callback = cbSlot >= 0 && ArgValue(from, pfnStart, cbSlot, out ulong cb)
-                ? cb
-                : CallbackNear(from, pfnStart);
+            if (cbSlot >= 0 && ArgValue(from, pfnStart, cbSlot, out ulong cb))
+            {
+                cv.Callback = cb;
+                cv.CallbackSlot = cbSlot;
+            }
+            else
+            {
+                cv.Callback = CallbackNear(from, pfnStart);
+            }
             cv.ValueType = ConVarTypeRecovery.FromCall(from, pfnStart, obj, flagSlot, ArgRegs(),
                 ConVarValueTypeNames.Length, out cv.InitAt, out cv.ReferenceStyle);
 
@@ -1287,6 +1311,68 @@ public static unsafe class ConVarNaming
         }
 
         return SetName(cv.Callback, wanted, SnNoCheck | SnForce);
+    }
+
+    /// <summary>
+    /// How a command's registration passes its callback (ConCommandCallbackInfo_t: the function, then the
+    /// interface/void/context-less bits). SysV passes the 16-byte struct in two registers, the bits in the one
+    /// after the function; MSVC builds it on the stack and sets the bits with the last and/or on its flag byte.
+    /// Null when the registration does not show it.
+    /// </summary>
+    private static int? CommandCallbackKind(ConVarInfo cv)
+    {
+        ulong pfnStart = FuncStart(cv.RegisteredAt);
+        if (pfnStart == BadAddr)
+        {
+            return null;
+        }
+
+        int[] regs = ArgRegs();
+        if (regs.Length == 6)
+        {
+            return cv.CallbackSlot >= 0 && cv.CallbackSlot + 1 < regs.Length &&
+                   TrackedValue(cv.RegisteredAt, regs[cv.CallbackSlot + 1], out ulong bits)
+                ? (int)(bits & 7)
+                : null;
+        }
+
+        byte* buf = stackalloc byte[Insn.BufferSize];
+        ulong ea = cv.RegisteredAt;
+        for (int i = 0; i < MaxCallbackInsns * 2; i++)
+        {
+            ea = IdaNative.prev_head(ea, pfnStart);
+            if (ea == BadAddr || !Insn.TryDecode(ea, buf) || Insn.IsCall(buf))
+            {
+                break;
+            }
+
+            if (Insn.OpType(buf, 0) is not (Insn.OpDispl or Insn.OpPhrase) || Insn.OpType(buf, 1) != Insn.OpImm ||
+                Insn.OpWidth(buf, 0) != 0)
+            {
+                continue;
+            }
+
+            string mnemonic = Mnemonic(ea);
+            ulong imm = Insn.OpValue(buf, 1) & 0xFF;
+            if (mnemonic == "and" && (imm & 7) == 0)
+            {
+                return 0;
+            }
+
+            if (mnemonic == "or" && (imm & ~7ul) == 0)
+            {
+                return (int)imm;
+            }
+        }
+
+        return null;
+    }
+
+    private static string Mnemonic(ulong ea)
+    {
+        var text = new QString();
+        try { return IdaNative.print_insn_mnem(&text, ea) > 0 ? text.Read() : string.Empty; }
+        finally { text.Dispose(); }
     }
 
     // func_t::flags FUNC_THUNK.
