@@ -117,8 +117,9 @@ internal sealed unsafe class VTableDrift
     }
 
     /// <summary>
-    /// The matched slots whose function the SDK now calls something else than the recorded method: the
-    /// declaration moved away from the build there. previous holds the recorded "fingerprint method" slots.
+    /// The matched slots whose function moved and the SDK now calls something else than the recorded method: the
+    /// declaration moved away from the build there. A function still in its slot that the SDK names differently
+    /// is the SDK corrected, not the build drifted. previous holds the recorded "fingerprint method" slots.
     /// </summary>
     internal static List<(int Old, int New)> Conflicts(IReadOnlyList<string> previous, string?[] fingerprints,
         string?[] names)
@@ -126,7 +127,8 @@ internal sealed unsafe class VTableDrift
 
     private static List<(int Old, int New)> Conflicts(IReadOnlyList<string> previous, List<(int Old, int New)> pairs,
         string?[] names)
-        => [.. pairs.Where(p => Parse(previous[p.Old]).Name is string was && names[p.New] is string now && was != now)];
+        => [.. pairs.Where(p => p.Old != p.New && Parse(previous[p.Old]).Name is string was && names[p.New] is string now &&
+                                was != now)];
 
     private static string Key(SchemaVTable table) => $"{table.ClassName}@{table.ObjectOffset ?? 0}";
 

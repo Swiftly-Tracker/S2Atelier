@@ -92,6 +92,13 @@ internal static unsafe class SdkFunctionBinding
                     }
                     else diagnostic($"[schema-sdk] 0x{address:X}: IDA rejected SDK prototype.");
                 }
+                else if (HasSymbolPrototype(address))
+                {
+                    // The symbol is right; an SDK prototype that disagrees puts another method at this slot.
+                    if (!SameType(address, &expected))
+                        diagnostic($"[schema-sdk] 0x{address:X}: {currentName} keeps its symbol's prototype; " +
+                                   $"the SDK puts {chosen.Slot.SourceClass}::{method} at this slot ({chosen.Slot.Header}).");
+                }
                 else diagnostic($"[schema-sdk] 0x{address:X}: explicit/edited function type preserved.");
 
                 if (CanUpdateName(currentName, metadata))
@@ -195,11 +202,31 @@ internal static unsafe class SdkFunctionBinding
 
     internal static bool CanUpdateType(ulong address, SdkFunctionOwnership? ownership = null)
     {
+        // A mangled symbol spells the function's real prototype; FLIRT names that do not fit the function are
+        // dropped by LibraryMisnames before any pass types it.
+        if (HasSymbolPrototype(address)) return false;
         ownership ??= ReadOwnership(ReadComment(address));
         return ownership?.Prototype is string expected
             ? FingerprintAt(address) == expected
             : (IdaNative.get_aflags(address) & 0x02000000) == 0;
     }
+
+    // The this types differ by design (the symbol's class, the table's owner); the argument count tells methods apart.
+    private static bool SameType(ulong address, TypeInfo* expected)
+    {
+        const int GtaFunctionArgumentCount = 23;
+        TypeInfo current = default;
+        try
+        {
+            return IdaNative.get_tinfo(&current, address) == 0 ||
+                   IdaNative.get_tinfo_property(current.Typid, GtaFunctionArgumentCount) ==
+                   IdaNative.get_tinfo_property(expected->Typid, GtaFunctionArgumentCount);
+        }
+        finally { current.Dispose(); }
+    }
+
+    internal static bool HasSymbolPrototype(ulong address)
+        => LibraryMisnames.IsMangled(SchemaVTableTypes.NameAt(address));
 
     internal static string? FingerprintAt(ulong address)
     {

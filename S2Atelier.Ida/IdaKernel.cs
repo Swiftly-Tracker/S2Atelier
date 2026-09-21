@@ -196,6 +196,18 @@ public static unsafe class IdaKernel
             DriveAnalysis(onProgress == null ? null : (fraction, address) => onProgress(fraction * analysisShare, address));
             IdaNative.build_strlist();
 
+            string module = Path.GetFileName(full);
+            module = module.EndsWith(".i64", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
+            var health = new ModuleHealth(module);
+            if (runInterfaces || runSchema)
+            {
+                // Library names FLIRT gave to methods go before the vtable passes, which then name and type them.
+                var misnames = LibraryMisnames.Run(SchemaImport.DetectTargetPlatform(), Console.Error.WriteLine);
+                Console.Error.WriteLine($"[library-misnames] {Path.GetFileName(full)}: library functions in vtables=" +
+                    $"{misnames.Checked}, names dropped={misnames.Dropped}.");
+                health.Count("library-misnames.dropped", misnames.Dropped);
+            }
+
             if (runInterfaces) BeginPass("interfaces");
             var interfaceResult = runInterfaces
                 ? ValveInterfaceImport.Run(full, hl2SdkPath!)
@@ -203,14 +215,11 @@ public static unsafe class IdaKernel
 
             // Both the schema pass and the interface step name slots from hl2sdk; one gate holds a drifted SDK
             // class back in both and records the module's snapshot.
-            string module = Path.GetFileName(full);
-            module = module.EndsWith(".i64", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
             VTableDrift? drift = vtableBaselineDirectory == null && vtableSnapshotDirectory == null
                 ? null
                 : new VTableDrift(module, vtableBaselineDirectory == null
                     ? null
                     : Path.Combine(vtableBaselineDirectory, VTableDrift.SnapshotName(module)));
-            var health = new ModuleHealth(module);
             if (runInterfaces)
             {
                 health.Count("interfaces.globals", interfaceResult.GlobalsRenamed);
