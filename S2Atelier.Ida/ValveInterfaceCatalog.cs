@@ -238,12 +238,20 @@ public sealed partial class ValveInterfaceCatalog
         int separator = className.LastIndexOf("::", StringComparison.Ordinal);
         string leaf = separator < 0 ? className : className[(separator + 2)..];
         string pattern = $@"(?<![A-Za-z0-9_])(?:abstract_class|class|struct)(?:[ \t]+[A-Za-z_][A-Za-z0-9_]*)*[ \t]+{Regex.Escape(leaf)}\b[^;{{]*{{";
+        // A scoped class (GCSDK::CJob) is only declared by a header that opens its namespace or outer class;
+        // another class of the same name (tier1's CJob) is not it.
+        string? scope = separator < 0 ? null : className[..separator];
+        if (scope?.LastIndexOf("::", StringComparison.Ordinal) is int inner and >= 0) scope = scope[(inner + 2)..];
+        string? scopePattern = scope == null
+            ? null
+            : $@"(?<![A-Za-z0-9_])(?:namespace|class|struct)[ \t\r\n]+(?:[A-Za-z_][A-Za-z0-9_]*[ \t]+)*{Regex.Escape(scope)}\b";
         var matches = new List<string>();
         foreach ((string path, string source) in headers)
         {
             if (!source.Contains(leaf, StringComparison.Ordinal)) continue;
             string sanitized = StripCommentsAndLiterals(source);
-            if (Regex.IsMatch(sanitized, pattern, RegexOptions.CultureInvariant))
+            if (Regex.IsMatch(sanitized, pattern, RegexOptions.CultureInvariant) &&
+                (scopePattern == null || Regex.IsMatch(sanitized, scopePattern, RegexOptions.CultureInvariant)))
             {
                 matches.Add(NormalizePath(path));
             }
