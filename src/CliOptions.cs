@@ -276,11 +276,8 @@ internal sealed class CliOptions
             error = $"Schema JSON does not exist: '{ImportSchemaPath}'.";
             return false;
         }
-        foreach (string required in new[]
-                 {
-                     "public", Path.Combine("game", "shared"), Path.Combine("game", "server"),
-                     Path.Combine("thirdparty", "protobuf-3.21.8", "src"), "common",
-                 })
+        // Only public/ is common to every SDK fork; the other include directories are used when present.
+        foreach (string required in new[] { "public" })
         {
             if (!Directory.Exists(Path.Combine(Hl2SdkPath, required)))
             {

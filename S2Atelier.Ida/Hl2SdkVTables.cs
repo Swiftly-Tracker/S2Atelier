@@ -104,19 +104,22 @@ internal static class SdkVTableMatching
 /// <summary>
 /// How hl2sdk headers parsed last time, per platform: those that did not parse on their own and the batches
 /// that parsed together, each header with a hash of its contents. The SDK changes rarely, so a run reuses the
-/// batches whose headers are unchanged and only splits up what changed.
+/// batches whose headers are unchanged and only splits up what changed. A different parser configuration
+/// (arguments, include paths, shims) starts over.
 /// </summary>
 internal sealed class ParseCache(string path, ParseCache.State state)
 {
-    internal sealed record State(Dictionary<string, string> Failed, List<Dictionary<string, string>> Batches);
+    internal sealed record State(Dictionary<string, string> Failed, List<Dictionary<string, string>> Batches,
+        string? Configuration = null);
 
-    internal static ParseCache Load(SchemaTargetPlatform platform)
+    internal static ParseCache Load(SchemaTargetPlatform platform, string? configuration)
     {
         string path = Path.Combine(Path.GetTempPath(), "s2atelier", $"sdk-parse-{platform}.json");
         try
         {
             if (File.Exists(path) &&
-                System.Text.Json.JsonSerializer.Deserialize<State>(File.ReadAllText(path)) is State loaded)
+                System.Text.Json.JsonSerializer.Deserialize<State>(File.ReadAllText(path)) is State loaded &&
+                loaded.Configuration == configuration)
             {
                 return new(path, loaded);
             }
@@ -125,7 +128,7 @@ internal sealed class ParseCache(string path, ParseCache.State state)
         {
         }
 
-        return new(path, new([], []));
+        return new(path, new([], [], configuration));
     }
 
     internal bool Failed(string header, string contents) => state.Failed.GetValueOrDefault(header) == Hash(contents);
@@ -212,7 +215,7 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
             // IDAClang's setup dominates a parse, so headers are parsed together, in the batches that worked last
             // time. A batch that fails is halved until the header, or the pair of headers, that breaks it stands
             // alone; a header that does not parse alone is skipped until its file changes.
-            var cache = ParseCache.Load(platform);
+            var cache = ParseCache.Load(platform, SchemaImport.ParserConfiguration);
             var byHeader = groups.ToDictionary(g => g.Key, StringComparer.OrdinalIgnoreCase);
             var skipped = byHeader.Keys.Where(x => cache.Failed(x, headers[x])).ToList();
             if (skipped.Count > 0)

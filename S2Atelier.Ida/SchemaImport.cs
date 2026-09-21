@@ -217,6 +217,9 @@ public static unsafe class SchemaImport
         throw new SchemaImportException("Cannot verify schema platform bitness because IDA found no functions.");
     }
 
+    /// <summary>A hash of the parser arguments ConfigureClang last set, generated headers aside.</summary>
+    internal static string? ParserConfiguration { get; private set; }
+
     internal static void ConfigureClang(
         string hl2SdkPath,
         SchemaTargetPlatform platform,
@@ -243,11 +246,14 @@ public static unsafe class SchemaImport
 
         var arguments = new List<string>
         {
-            "-x", "c++", "-std=c++17", "-U__tuple", "-frtti", "-ferror-limit=100", "-Wno-c++11-narrowing", "-Wno-invalid-offsetof",
+            "-x", "c++", "-std=c++17", "-frtti", "-ferror-limit=100", "-Wno-c++11-narrowing", "-Wno-invalid-offsetof",
             // Layout assertions name private SDK members. "#define private public" cannot reach headers
             // that the leading includes already pulled in (e.g. entityidentity.h via eiface.h).
             "-fno-access-control",
         };
+        // IDAClang predefines IDA's type attribute keywords as macros; libstdc++ uses several of these
+        // names for its own parameters and locals (__off, __oct, __dec, __sbin, ...).
+        arguments.AddRange(IdaTypeKeywords.Select(x => "-U" + x));
         if (skipLayoutAssertions)
         {
             arguments.Add("-DS2ATELIER_SCHEMA_SKIP_LAYOUT_ASSERTS=1");
@@ -271,7 +277,15 @@ public static unsafe class SchemaImport
                 "-target", "x86_64-unknown-linux-gnu", "-DPOSIX", "-DLINUX", "-DCOMPILER_GCC",
                 "-DPLATFORM_64BITS", "-DX64BITS", "-D_CRT_USE_BUILTIN_OFFSETOF=1",
                 "-Dstricmp=strcasecmp", "-Dstrnicmp=strncasecmp",
+                // The pre-C++11 std::string: without it <string> declares the std::pmr aliases, which
+                // IDAClang instantiates over an allocator only declared there. No SDK type holds a string.
+                "-D_GLIBCXX_USE_CXX11_ABI=0",
             ]);
+        }
+        if (platform != SchemaTargetPlatform.WindowsMsvc)
+        {
+            // Searched before the SDK and libstdc++, so its headers win.
+            arguments.Add("-I" + QuoteArgument(LinuxShimDirectory()));
         }
         if (generatedIncludeDirectory != null) arguments.Add("-I" + QuoteArgument(generatedIncludeDirectory));
         // eiface.h/igameevents.h declare interface methods that pass CNetMessagePB<T> (see
@@ -281,7 +295,11 @@ public static unsafe class SchemaImport
         // this SDK actually references with the SDK's own protoc (it patches codegen to drop
         // "final" from message classes - CNetMessagePB<T> inherits T, which a stock protoc's
         // "final" would make illegal - so a generic protoc release is not a substitute).
-        arguments.Add("-I" + QuoteArgument(NetworkProtobufHeaders(hl2SdkPath)));
+        // IDAClang crashes reading protobuf's descriptor.pb.h for Linux; the SDK only takes
+        // ENetworkDisconnectionReason from these headers there, which the stub declares.
+        arguments.Add("-I" + QuoteArgument(platform == SchemaTargetPlatform.WindowsMsvc
+            ? NetworkProtobufHeaders(hl2SdkPath)
+            : NetworkProtobufFallbackStub()));
         foreach (string directory in includeDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             arguments.Add("-I" + QuoteArgument(directory));
@@ -303,6 +321,11 @@ public static unsafe class SchemaImport
         }
 
         string argv = string.Join(' ', arguments);
+        // What decides how a header parses, without the per-run directory of generated headers.
+        ParserConfiguration = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(
+            string.Join(' ', arguments.Where(x => generatedIncludeDirectory == null ||
+                                                 x != "-I" + QuoteArgument(generatedIncludeDirectory))) +
+            (platform == SchemaTargetPlatform.WindowsMsvc ? "" : LinuxSharedMutexShim + LinuxStringShim))));
         byte* parser = Utf8.Allocate("clang");
         byte* nativeArgv = Utf8.Allocate(argv);
         try
@@ -322,6 +345,79 @@ public static unsafe class SchemaImport
             Utf8.Free(nativeArgv);
             Utf8.Free(parser);
         }
+    }
+
+    private static readonly string[] IdaTypeKeywords =
+    [
+        "__tuple", "__off", "__offset", "__bin", "__oct", "__hex", "__dec", "__sbin", "__soct", "__shex", "__sdec",
+        "__udec", "__char", "__segm", "__enum", "__strlit", "__stroff", "__custom", "__invsign", "__invbits",
+        "__lzero", "__tabform",
+    ];
+
+    // IDAClang instantiates every template it names, including both arms of a conditional base, so
+    // libstdc++'s __numeric_traits<float> (used by <string>) instantiates __numeric_traits_integer<float>,
+    // whose static_assert fails. The shim gives the arm that is never taken an empty definition.
+    private const string LinuxStringShim = """
+        // Generated by S2Atelier: <string> as IDAClang can read it.
+        #pragma once
+        #include <bits/c++config.h>
+        #if defined(__GLIBCXX__)
+        #include <ext/numeric_traits.h>
+        namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
+        {
+        _GLIBCXX_BEGIN_NAMESPACE_VERSION
+        template<> struct __numeric_traits_integer<float> { };
+        template<> struct __numeric_traits_integer<double> { };
+        template<> struct __numeric_traits_integer<long double> { };
+        _GLIBCXX_END_NAMESPACE_VERSION
+        }
+        #endif
+        #include_next <string>
+
+        """;
+
+    // tier0/threadtools.h holds a std::shared_mutex. libstdc++'s <shared_mutex> reaches most of the
+    // library, and IDAClang crashes or fails in parts of it. The shim declares the same object,
+    // libstdc++'s pthread_rwlock_t, and nothing else.
+    private const string LinuxSharedMutexShim = """
+        // Generated by S2Atelier: std::shared_mutex as libstdc++ lays it out, without <string>.
+        #pragma once
+        #define _GLIBCXX_SHARED_MUTEX 1
+        #include <pthread.h>
+        namespace std
+        {
+        class shared_mutex
+        {
+        public:
+            shared_mutex();
+            ~shared_mutex();
+            void lock();
+            bool try_lock();
+            void unlock();
+            void lock_shared();
+            bool try_lock_shared();
+            void unlock_shared();
+        private:
+            pthread_rwlock_t _M_rwlock;
+        };
+        }
+
+        """;
+
+    private static string LinuxShimDirectory()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "s2atelier-linux-shims");
+        foreach ((string name, string text) in (ReadOnlySpan<(string, string)>)[("shared_mutex", LinuxSharedMutexShim), ("string", LinuxStringShim)])
+        {
+            string header = Path.Combine(directory, name);
+            if (!File.Exists(header) || File.ReadAllText(header) != text)
+            {
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(header, text);
+            }
+        }
+
+        return directory;
     }
 
     // IDA saves the selected source parser and its arguments in the database, and the GUI parses every
