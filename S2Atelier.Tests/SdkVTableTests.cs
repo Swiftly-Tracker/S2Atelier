@@ -49,6 +49,44 @@ internal static class SdkVTableTests
         Check(VTableSlotNaming.Owner(["CDerived", "CUnknown"], chains) == null, "a class without RTTI bases decides nothing");
     }
 
+    internal static void Health()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"s2atelier-health-{Guid.NewGuid():N}");
+        try
+        {
+            var before = new ModuleHealth("server.dll");
+            before.Count("entity-classes.classes", 516);
+            before.Count("log-channels.found", 53);
+            before.Count("convars.found", 100);
+            before.Warn("vtable-drift", ["CFoo: SDK names held."]);
+            string path = Path.Combine(directory, ModuleHealth.FileName("server.dll"));
+            var written = before.Write(path, null);
+            Check(written.Regressions.Count == 0, "no baseline, no regression");
+            var baseline = ModuleHealth.Load(path);
+            Check(baseline != null && baseline.Counts["entity-classes.classes"] == 516 &&
+                  baseline.Warnings.Single() == "[vtable-drift] CFoo: SDK names held.", "report round trips");
+
+            var after = new ModuleHealth("server.dll");
+            after.Count("entity-classes.classes", 12);
+            after.Count("log-channels.found", 50);
+            after.Count("convars.found", 94);
+            var regressions = after.Regressions(baseline);
+            // 516 -> 12 fell; 53 -> 50 is within the noise; 100 -> 94 is a small absolute drop over 5%.
+            Check(regressions.Count == 1 && regressions[0].StartsWith("entity-classes.classes: 516 -> 12", StringComparison.Ordinal),
+                "only a large drop regresses");
+            Check(new ModuleHealth("server.dll").Regressions(baseline).Count == 3, "a pass that stopped counting regresses");
+            Check(ModuleHealth.Load(Path.Combine(directory, "missing.json")) == null, "missing baseline");
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+
+        Check(EntityClassNaming.CallbackName("m_pfnRegisterPulseBindings") == "RegisterPulseBindings" &&
+              EntityClassNaming.CallbackName("m_NameToThinkFunc") == "NameToThinkFunc" &&
+              EntityClassNaming.CallbackName("Other") == "Other", "callback names drop the member prefix");
+    }
+
     internal static void Managed()
     {
         var classes = new[] { Class("Base"), Class("Other"), Class("Derived", "Base", "Other") }.ToDictionary(x => x.Name);

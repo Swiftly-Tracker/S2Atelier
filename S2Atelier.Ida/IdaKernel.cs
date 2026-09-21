@@ -209,11 +209,24 @@ public static unsafe class IdaKernel
                 : new VTableDrift(module, vtableBaselineDirectory == null
                     ? null
                     : Path.Combine(vtableBaselineDirectory, VTableDrift.SnapshotName(module)));
+            var health = new ModuleHealth(module);
+            if (runInterfaces)
+            {
+                health.Count("interfaces.globals", interfaceResult.GlobalsRenamed);
+                health.Count("interfaces.vtables", interfaceResult.VTablesImported);
+            }
 
             if (runSchema) BeginPass("schema");
             var schemaResult = runSchema
                 ? SchemaImport.Run(full, importSchemaPath!, hl2SdkPath!, schemaProject, drift)
                 : new SchemaImportResult(false);
+            if (schemaResult.Applicable)
+            {
+                health.Count("schema.types", schemaResult.TypesImported);
+                health.Count("schema.vtables", schemaResult.VTablesMatched);
+                health.Count("schema.functions-bound", schemaResult.FunctionsBound);
+                health.Warn("schema-layout", schemaResult.LayoutMismatches ?? []);
+            }
 
             if (runInterfaces || runSchema)
             {
@@ -229,6 +242,10 @@ public static unsafe class IdaKernel
                     Console.Error.WriteLine($"[vtable-drift] {held}");
                 }
 
+                health.Count("interface-vtables.tables", implementations.Tables);
+                health.Count("interface-vtables.bound", implementations.Binding.Bound);
+                health.Warn("vtable-drift", drift?.Held ?? []);
+
                 if (drift != null && vtableSnapshotDirectory != null)
                 {
                     drift.Write(Path.Combine(vtableSnapshotDirectory, VTableDrift.SnapshotName(module)));
@@ -238,6 +255,7 @@ public static unsafe class IdaKernel
                 var namedSlots = VTableSlotNaming.Run(SchemaImport.DetectTargetPlatform(), Console.Error.WriteLine);
                 Console.Error.WriteLine($"[vtable-slots] {Path.GetFileName(full)}: tables={namedSlots.Tables}, " +
                     $"named={namedSlots.Named}, ambiguous={namedSlots.Ambiguous}.");
+                health.Count("vtable-slots.tables", namedSlots.Tables);
 
                 Console.Error.WriteLine($"[types] {TemplateAliases.Run()} template alias(es) created.");
                 // The imports parse with IDAClang; the later passes, like the GUI, use the legacy parser and
@@ -256,6 +274,15 @@ public static unsafe class IdaKernel
                     $"typed={entities.Typed}, infos-named={entities.InfosNamed}, schema-bindings={entities.SchemaBindingsNamed}, " +
                     $"data-maps={entities.DataMapsNamed}, skipped={entities.Skipped}, " +
                     $"round-trip-failures={entities.RoundTripFailures}, dangling-bases={entities.DanglingBases}.");
+                health.Count("entity-classes.classes", entities.ClassesFound);
+                health.Count("entity-classes.typed", entities.Typed);
+                health.Count("entity-classes.schema-bindings", entities.SchemaBindingsNamed);
+                health.Count("entity-classes.data-maps", entities.DataMapsNamed);
+                var entityWarnings = new List<string>();
+                if (entities.Layout.StartsWith("drift", StringComparison.Ordinal)) entityWarnings.Add(entities.Layout);
+                if (entities.RoundTripFailures > 0) entityWarnings.Add($"{entities.RoundTripFailures} round-trip failure(s)");
+                if (entities.DanglingBases > 0) entityWarnings.Add($"{entities.DanglingBases} base info(s) that are no class info");
+                health.Warn("entity-classes", entityWarnings);
             }
 
             if (patchPlt) BeginPass("plt");
@@ -282,6 +309,28 @@ public static unsafe class IdaKernel
             var protoResult = runProtobufs
                 ? ProtoImport.Run(importProtobufsDir!)
                 : new ProtoImportResult(false, 0, 0, 0);
+
+            if (pltResult.Applicable) health.Count("plt.patched", pltResult.Patched);
+            if (s2fResult.Applicable)
+            {
+                health.Count("convars.found", s2fResult.Found);
+                health.Count("convars.typed", s2fResult.TypedObjects);
+            }
+
+            if (logResult.Applicable) health.Count("log-channels.found", logResult.Found);
+            if (nameFnPtrTables) health.Count("fnptr-tables.found", fnPtrResult.Found);
+            if (protoResult.Applicable) health.Count("protobufs.types", protoResult.TypesDefined);
+            if (vtableSnapshotDirectory != null)
+            {
+                var baseline = vtableBaselineDirectory == null
+                    ? null
+                    : ModuleHealth.Load(Path.Combine(vtableBaselineDirectory, ModuleHealth.FileName(module)));
+                var report = health.Write(Path.Combine(vtableSnapshotDirectory, ModuleHealth.FileName(module)), baseline);
+                foreach (string regression in report.Regressions)
+                {
+                    Console.Error.WriteLine($"[health] {Path.GetFileName(full)}: fell since the baseline: {regression}");
+                }
+            }
 
             onStage?.Invoke(save ? "saving" : "closing");
             onProgress?.Invoke(1.0, 0);

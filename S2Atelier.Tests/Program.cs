@@ -21,6 +21,7 @@ var tests = new (string Name, Action Run)[]
     ("SDK vtable matching and ownership", SdkVTableTests.Managed),
     ("vtable drift against the previous build", SdkVTableTests.Drift),
     ("vtable slot owners", SdkVTableTests.SlotOwners),
+    ("module health against the baseline", SdkVTableTests.Health),
     ("gated native SDK vtables", SdkVTableTests.Native),
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),

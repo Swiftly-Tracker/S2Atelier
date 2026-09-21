@@ -131,20 +131,21 @@ internal sealed class CliOptions
                     options.ParseError = "--convar-types requires a convars.json path.";
                     break;
 
-                case "--vtable-baseline" when i + 1 < args.Length:
+                // --vtable-baseline and --vtable-snapshot are the names from when the snapshot only held vtables.
+                case "--baseline" or "--vtable-baseline" when i + 1 < args.Length:
                     options.VTableBaselineDirectory = args[++i];
                     break;
 
-                case "--vtable-baseline":
-                    options.ParseError = "--vtable-baseline requires a directory path.";
+                case "--baseline" or "--vtable-baseline":
+                    options.ParseError = "--baseline requires a directory path.";
                     break;
 
-                case "--vtable-snapshot" when i + 1 < args.Length:
+                case "--snapshot" or "--vtable-snapshot" when i + 1 < args.Length:
                     options.VTableSnapshotDirectory = args[++i];
                     break;
 
-                case "--vtable-snapshot":
-                    options.ParseError = "--vtable-snapshot requires a directory path.";
+                case "--snapshot" or "--vtable-snapshot":
+                    options.ParseError = "--snapshot requires a directory path.";
                     break;
 
                 case "--import-interfaces":
@@ -223,17 +224,12 @@ internal sealed class CliOptions
         }
         if (!needsHl2Sdk && !NameEntityClasses && Hl2SdkPath != null)
         {
-            error = "--hl2sdk requires --import-schema or --import-interfaces.";
+            error = "--hl2sdk requires --import-schema, --import-interfaces or --name-entity-classes.";
             return false;
         }
         if (ImportSchemaPath == null && !SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase))
         {
             error = "--schema-project requires --import-schema.";
-            return false;
-        }
-        if (Hl2SdkPath == null && (VTableBaselineDirectory != null || VTableSnapshotDirectory != null))
-        {
-            error = "--vtable-baseline and --vtable-snapshot require --hl2sdk.";
             return false;
         }
         if (VTableBaselineDirectory != null && !Directory.Exists(VTableBaselineDirectory))

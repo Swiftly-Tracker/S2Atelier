@@ -434,14 +434,15 @@ public static class Entrypoint
                                   names, apply interface pointer types, and import reliable virtual
                                   tables through IDAClang. Requires --hl2sdk; sdk.json is not needed.
               --hl2sdk <dir>      HL2SDK root used by --import-interfaces and/or --import-schema.
-              --vtable-baseline <dir>
-                                  With --hl2sdk, compare the SDK-named vtables with the previous
-                                  build's snapshot (<dir>/<binary>.vtables.json). A class whose slots moved
-                                  so the SDK would rename a known function keeps its SDK names back; its
-                                  vtable is commented and it is reported until the SDK agrees again.
-              --vtable-snapshot <dir>
-                                  With --hl2sdk, write this build's snapshot to <dir>, the baseline
-                                  of the next build.
+              --snapshot <dir>    Write this build's snapshot to <dir>, the baseline of the next build:
+                                  <binary>.vtables.json (the SDK-named vtables' slots), <binary>.health.json
+                                  (what each pass found, and the SDK disagreements it held back) and, with
+                                  --name-entity-classes, <binary>.entities.json (the entity class graph).
+              --baseline <dir>    Compare with the previous build's snapshot in <dir>. A class whose
+                                  vtable slots moved so the SDK would rename a known function keeps its
+                                  SDK names back, its vtable commented, until the SDK agrees again; a
+                                  pass whose count fell well below the baseline's is reported.
+                                  (--vtable-snapshot and --vtable-baseline are accepted as well.)
               --schema-project <auto|project>
                                   Project roots to import. Default auto derives client/server/etc.
                                   from the binary filename (including libNAME.so).
