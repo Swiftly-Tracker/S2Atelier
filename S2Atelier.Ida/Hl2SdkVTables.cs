@@ -131,9 +131,18 @@ internal sealed class ParseCache(string path, ParseCache.State state)
         return new(path, new([], [], configuration));
     }
 
-    internal bool Failed(string header, string contents) => state.Failed.GetValueOrDefault(header) == Hash(contents);
+    // A header usually fails over one it includes, so a failure stands only while no SDK header changed.
+    internal bool Failed(string header, IReadOnlyDictionary<string, string> headers)
+        => state.Failed.GetValueOrDefault(header) == FailureKey(header, headers);
 
-    internal void Record(string header, string contents) => state.Failed[header] = Hash(contents);
+    internal void Record(string header, IReadOnlyDictionary<string, string> headers)
+        => state.Failed[header] = FailureKey(header, headers);
+
+    private string? _tree;
+
+    private string FailureKey(string header, IReadOnlyDictionary<string, string> headers)
+        => Hash(headers[header]) + ":" + (_tree ??= Hash(string.Join('\n', headers
+            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Select(x => x.Key + " " + Hash(x.Value)))));
 
     /// <summary>
     /// The headers grouped as they parsed together last time, where every header of a batch is wanted and
@@ -217,7 +226,7 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
             // alone; a header that does not parse alone is skipped until its file changes.
             var cache = ParseCache.Load(platform, SchemaImport.ParserConfiguration);
             var byHeader = groups.ToDictionary(g => g.Key, StringComparer.OrdinalIgnoreCase);
-            var skipped = byHeader.Keys.Where(x => cache.Failed(x, headers[x])).ToList();
+            var skipped = byHeader.Keys.Where(x => cache.Failed(x, headers)).ToList();
             if (skipped.Count > 0)
                 diagnostic($"[schema-sdk] {skipped.Count} header(s) that did not parse before skipped: " +
                     string.Join(", ", skipped) + ".");
@@ -259,7 +268,7 @@ internal sealed unsafe class Hl2SdkVTables(Action<string> diagnostic) : IDisposa
                 }
 
                 keep = true;
-                cache.Record(batch[0], headers[batch[0]]);
+                cache.Record(batch[0], headers);
                 diagnostic($"[schema-sdk] {batch[0]}: {errors} parse error(s); group skipped.");
             }
         }
