@@ -16,7 +16,8 @@ public sealed record SchemaImportResult(
     int FunctionConflicts = 0,
     int ClangErrors = 0, int VTableTypesCompleted = 0, int VTableAddressesBound = 0,
     int VTableUnknownSlots = 0, int VTableConflicts = 0,
-    IReadOnlySet<string>? SchemaClasses = null);
+    IReadOnlySet<string>? SchemaClasses = null,
+    IReadOnlyList<string>? LayoutMismatches = null);
 
 public sealed class SchemaImportException(string message, int clangErrors = 0) : Exception(message)
 {
@@ -110,6 +111,15 @@ public static unsafe class SchemaImport
             }
             int importedTypes = CountAvailableTypes(header.ImportedTypeNames);
             Stage("schema preflight/import");
+            // The SDK declares the types sdk.json lists as HL2SDK ones; the import keeps the SDK's
+            // declaration even where the build's layout differs, so each difference is reported.
+            var layoutMismatches = TypeLayout.CompareWithSchema(
+                selection.Classes.Values.Where(x => !x.Synthetic && SchemaHeaderGenerator.IsSdkType(x.Name)),
+                selection.Enums.Values.Where(x => SchemaHeaderGenerator.IsSdkType(x.Name)));
+            foreach (string mismatch in layoutMismatches)
+            {
+                Console.Error.WriteLine($"[schema-layout] {mismatch}");
+            }
 
             SchemaVTableTypes.PrepareClassVptrs(selection, scan.PolymorphicClasses, Console.Error.WriteLine);
             scan = ResolveTableLayouts(scan);
@@ -160,7 +170,7 @@ public static unsafe class SchemaImport
             return new SchemaImportResult(true, selection.Project, importedTypes, scan.MatchedVTables,
                 binding.Bound, binding.Skipped, binding.Conflicts, clangErrors,
                 types.Completed, types.Bound, types.UnknownSlots, types.Conflicts,
-                selection.Classes.Keys.ToHashSet(StringComparer.Ordinal));
+                selection.Classes.Keys.ToHashSet(StringComparer.Ordinal), layoutMismatches);
         }
         finally
         {

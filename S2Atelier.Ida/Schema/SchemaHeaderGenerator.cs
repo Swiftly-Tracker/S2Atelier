@@ -795,7 +795,10 @@ public static partial class SchemaHeaderGenerator
     private static int FindClassSize(SchemaSelection selection, string name)
         => selection.Classes.TryGetValue(name, out SchemaClass? type) ? type.Size : 0;
 
-    private static bool IsHl2Override(string name)
+    private static bool IsHl2Override(string name) => IsSdkType(name);
+
+    /// <summary>A type sdk.json describes that the generated header takes from hl2sdk instead.</summary>
+    internal static bool IsSdkType(string name)
         => Hl2SdkCommonTypes.Contains(SchemaDatabase.NormalizeTypeReference(name));
 
     private static bool IsStdOverride(string name)
