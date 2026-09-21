@@ -22,6 +22,7 @@ var tests = new (string Name, Action Run)[]
     ("vtable drift against the previous build", SdkVTableTests.Drift),
     ("vtable slot owners", SdkVTableTests.SlotOwners),
     ("module health against the baseline", SdkVTableTests.Health),
+    ("global vars eras and convar flags", SdkVTableTests.GlobalVars),
     ("gated native SDK vtables", SdkVTableTests.Native),
     ("inheritance ownership", TestOwnership),
     ("function prototype rewrite", TestPrototypeRewrite),
@@ -962,7 +963,7 @@ static void TestInterfaceCliCombinations()
 
     CliOptions standalone = CliOptions.Parse(["server.dll", "--hl2sdk", sdk.Path]);
     True(!standalone.ValidateSchemaOptions(out string? standaloneError));
-    Contains(standaloneError!, "requires --import-schema, --import-interfaces or --name-entity-classes");
+    Contains(standaloneError!, "requires --import-schema, --import-interfaces, --name-entity-classes or --type-globals");
 
     CliOptions interfacesOnly = CliOptions.Parse(
         ["server.dll", "--import-interfaces", "--hl2sdk", sdk.Path]);

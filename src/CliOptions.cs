@@ -26,6 +26,8 @@ internal sealed class CliOptions
 
     public bool NameEntityClasses { get; private set; }
 
+    public bool TypeGlobals { get; private set; }
+
     public string? ImportProtobufsDir { get; private set; }
 
     public string? ImportSchemaPath { get; private set; }
@@ -101,6 +103,10 @@ internal sealed class CliOptions
 
                 case "--name-entity-classes":
                     options.NameEntityClasses = true;
+                    break;
+
+                case "--type-globals":
+                    options.TypeGlobals = true;
                     break;
 
                 case "--name-log-channels":
@@ -222,9 +228,9 @@ internal sealed class CliOptions
                     : "--import-schema requires --hl2sdk.";
             return false;
         }
-        if (!needsHl2Sdk && !NameEntityClasses && Hl2SdkPath != null)
+        if (!needsHl2Sdk && !NameEntityClasses && !TypeGlobals && Hl2SdkPath != null)
         {
-            error = "--hl2sdk requires --import-schema, --import-interfaces or --name-entity-classes.";
+            error = "--hl2sdk requires --import-schema, --import-interfaces, --name-entity-classes or --type-globals.";
             return false;
         }
         if (ImportSchemaPath == null && !SchemaProject.Equals("auto", StringComparison.OrdinalIgnoreCase))

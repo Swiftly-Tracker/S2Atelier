@@ -150,7 +150,8 @@ public static unsafe class IdaKernel
         string? importProtobufsDir = null, string? importSchemaPath = null, string? hl2SdkPath = null,
         string schemaProject = "auto", Action<double, ulong>? onProgress = null, bool importInterfaces = false,
         Action<string>? onStage = null, string? convarTypesPath = null, bool nameLogChannels = false,
-        string? vtableBaselineDirectory = null, string? vtableSnapshotDirectory = null, bool nameEntityClasses = false)
+        string? vtableBaselineDirectory = null, string? vtableSnapshotDirectory = null, bool nameEntityClasses = false,
+        bool typeGlobals = false)
     {
         AssertOwner();
 
@@ -179,7 +180,7 @@ public static unsafe class IdaKernel
             bool runProtobufs = !string.IsNullOrEmpty(importProtobufsDir);
             int passCount = new[]
                     { runInterfaces, runSchema, runInterfaces || runSchema, patchPlt, nameConVars, nameLogChannels,
-                      nameFnPtrTables, runProtobufs, nameEntityClasses }
+                      nameFnPtrTables, runProtobufs, nameEntityClasses, typeGlobals }
                 .Count(x => x);
             // Auto-analysis is only part of the job: the later passes can take minutes on large
             // binaries, so they share the rest of the bar instead of leaving it at 100%.
@@ -283,6 +284,27 @@ public static unsafe class IdaKernel
                 if (entities.RoundTripFailures > 0) entityWarnings.Add($"{entities.RoundTripFailures} round-trip failure(s)");
                 if (entities.DanglingBases > 0) entityWarnings.Add($"{entities.DanglingBases} base info(s) that are no class info");
                 health.Warn("entity-classes", entityWarnings);
+            }
+
+            if (typeGlobals)
+            {
+                BeginPass("global vars");
+                var globals = GlobalVarsTyping.Apply(module, hl2SdkPath, SchemaImport.DetectTargetPlatform(),
+                    Console.Error.WriteLine);
+                static string Hex(ulong? value) => value is ulong v ? $"0x{v:X}" : "-";
+                Console.Error.WriteLine($"[globals] {Path.GetFileName(full)}: era={globals.Era}, types={globals.Types}, " +
+                    $"gpGlobals={Hex(globals.GpGlobals)}, default={Hex(globals.FallbackGlobals)}, " +
+                    $"warning-func={Hex(globals.WarningFunc)}, client-offset={Hex(globals.ClientOffset)}, " +
+                    $"server-offset={Hex(globals.ServerOffset)}, time-scope-helpers={globals.Helpers}, skipped={globals.Skipped}.");
+                foreach (string warning in globals.Warnings)
+                {
+                    Console.Error.WriteLine($"[globals] {warning}");
+                }
+
+                health.Count("globals.found", (globals.GpGlobals != null ? 1 : 0) + (globals.ClientOffset != null ? 1 : 0) +
+                                              (globals.ServerOffset != null ? 1 : 0));
+                health.Count("globals.time-scope-helpers", globals.Helpers);
+                health.Warn("globals", globals.Warnings);
             }
 
             if (patchPlt) BeginPass("plt");

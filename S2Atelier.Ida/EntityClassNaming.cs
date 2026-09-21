@@ -544,7 +544,7 @@ internal static unsafe partial class EntityClassNaming
     }
 
     // Replaces only automatic names; a name already taken elsewhere gets the address appended.
-    private static bool NameData(ulong address, string name, ref int skipped)
+    internal static bool NameData(ulong address, string name, ref int skipped)
     {
         string current = SchemaVTableTypes.NameAt(address);
         if (current == name || current.StartsWith(name + "_", StringComparison.Ordinal))
@@ -578,7 +578,7 @@ internal static unsafe partial class EntityClassNaming
     }
 
     // An explicit type, the user's or a previous run's, stays.
-    private static bool ApplyType(ulong address, string declaration)
+    internal static bool ApplyType(ulong address, string declaration)
     {
         if ((IdaNative.get_aflags(address) & UserTypeFlag) != 0)
         {

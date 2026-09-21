@@ -87,6 +87,44 @@ internal static class SdkVTableTests
               EntityClassNaming.CallbackName("Other") == "Other", "callback names drop the member prefix");
     }
 
+    internal static void GlobalVars()
+    {
+        const byte Byte = 0, Dword = 2, Float = 3, Qword = 7;
+        Dictionary<(ulong, byte), int> Seen(params (ulong Offset, byte Width, int Count)[] accesses)
+            => accesses.ToDictionary(x => (x.Offset, x.Width), x => x.Count);
+
+        Check(GlobalVarsTyping.DetectEra(0x20, Seen((0x2C, Float, 450))).Era.Name == "A", "warn at 0x20 is era A");
+        Check(GlobalVarsTyping.DetectEra(0x28, Seen((0x28, Qword, 330), (0x34, Float, 330))).Era.Name == "B",
+            "checked accessors read the callback in era B");
+        Check(GlobalVarsTyping.DetectEra(0x28, Seen((0x30, Float, 900), (0x44, Dword, 300))).Era.Name == "C",
+            "no callback reads and no async flag is era C");
+        Check(GlobalVarsTyping.DetectEra(0x28, Seen((0x30, Float, 900), (0x54, Byte, 3))).Era.Name == "D",
+            "the async flag at 0x54 is era D");
+
+        foreach (var era in GlobalVarsTyping.Eras)
+        {
+            var fields = era.Fields.OrderBy(x => x.Offset).ToList();
+            Check(fields.Zip(fields.Skip(1)).All(x => x.First.Offset < x.Second.Offset), $"era {era.Name} fields ascend");
+            Check(fields.Single(x => x.Name == "m_pfnWarningFunc").Offset == era.Warn &&
+                  fields.Single(x => x.Name == "curtime").Offset == era.Curtime &&
+                  fields.Single(x => x.Name == "tickcount").Offset == era.Tickcount &&
+                  fields.Single(x => x.Name == "m_bInSimulation").Offset == era.InSimulation, $"era {era.Name} anchors");
+            Check(GlobalVarsTyping.EraDeclarations(era).Contains("struct CGlobalVarsBase"), $"era {era.Name} declares");
+        }
+
+        var current = GlobalVarsTyping.Eras[^1];
+        var sdk = current.Fields.ToDictionary(x => x.Name, x => x.Offset);
+        Check(GlobalVarsTyping.Differences(current, sdk, 0x60).Count == 0, "a matching SDK layout is taken");
+        sdk["curtime"] = 0x34;
+        Check(GlobalVarsTyping.Differences(current, sdk, 0x60).Single() == "curtime at 0x34, build 0x30", "a moved field is reported");
+
+        Check(ConVarRegistrationNotes.Describe(0) == "FCVAR_NONE", "no flags");
+        Check(ConVarRegistrationNotes.Describe((1ul << 13) | (1ul << 19)) == "FCVAR_REPLICATED | FCVAR_RELEASE", "flag names");
+        Check(ConVarRegistrationNotes.Describe((1ul << 32) | (1ul << 40)) == "FCVAR_DEFENSIVE | 0x10000000000", "unknown bits in hex");
+        Check(ConVarRegistrationNotes.Describe((1ul << 30) | (1ul << 34)) == "FCVAR_SNAPSHOT_IGNORED | FCVAR_GAMEINFO_CANNOT_OVERRIDE",
+            "the bits hl2sdk does not name");
+    }
+
     internal static void Managed()
     {
         var classes = new[] { Class("Base"), Class("Other"), Class("Derived", "Base", "Other") }.ToDictionary(x => x.Name);

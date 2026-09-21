@@ -285,7 +285,7 @@ def analyze_group(root, job, jobdir, platform, sdk, provenance, binaries, previo
         def mounted(path):
             return ('Z:' + str(path).replace('/', chr(92))) if platform == 'windows' else str(path)
         args = ['--patch-plt', '--name-convars', '--name-fnptr-tables', '--name-log-channels',
-                '--name-entity-classes', '--import-interfaces', '--hl2sdk', mounted(sdk)]
+                '--name-entity-classes', '--type-globals', '--import-interfaces', '--hl2sdk', mounted(sdk)]
         convars = jobdir / 'dumps/dump/convars.json'
         if convars.is_file():
             args += ['--convar-types', mounted(convars)]
