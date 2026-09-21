@@ -47,6 +47,21 @@ internal static class SdkVTableTests
             "the base that does not hold the function is not chosen");
         Check(VTableSlotNaming.Owner(["CBase", "CUnrelated"], chains) == null, "a folded body has no owner");
         Check(VTableSlotNaming.Owner(["CDerived", "CUnknown"], chains) == null, "a class without RTTI bases decides nothing");
+
+        // FLIRT names of functions the vtables hold.
+        Check(!LibraryMisnames.Belongs("void __fastcall std::swfun(struct std::ios_base *, __int64)", ["CBase"], chains),
+            "a free library function in a game vtable is a misname");
+        Check(!LibraryMisnames.Belongs("__int64 __fastcall Concurrency::details::_RefCounter::_Reference(void)",
+            ["CDerived"], chains), "a library method of an unrelated class is a misname");
+        Check(LibraryMisnames.Belongs("void __fastcall CBase::Release(void)", ["CDerived"], chains),
+            "a method of a base of the holder fits");
+        Check(!LibraryMisnames.Belongs("void __fastcall NotCBase::Release(void)", ["CDerived"], chains),
+            "a scope ending in a base's name is another class");
+        Check(LibraryMisnames.Belongs("const char *__fastcall std::exception::what(void)", ["std::bad_alloc"], chains),
+            "a library class's own table keeps its names");
+        Check(LibraryMisnames.IsMangled("?swfun@std@@YAXAEAVios_base@1@_J@Z") && LibraryMisnames.IsMangled("_ZN7CThread5StartEj") &&
+              !LibraryMisnames.IsMangled("sub_180001000") && !LibraryMisnames.IsMangled("CBase::vfn_3"),
+            "mangled symbols are told from other names");
     }
 
     internal static void Health()
