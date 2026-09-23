@@ -273,12 +273,14 @@ public static unsafe class IdaKernel
                 Console.Error.WriteLine($"[entity-classes] {Path.GetFileName(full)}: layout={entities.Layout}, " +
                     $"classes={entities.ClassesFound}, abstract-infos={entities.AbstractInfos}, named={entities.Named}, " +
                     $"typed={entities.Typed}, infos-named={entities.InfosNamed}, schema-bindings={entities.SchemaBindingsNamed}, " +
-                    $"data-maps={entities.DataMapsNamed}, skipped={entities.Skipped}, " +
+                    $"data-maps={entities.DataMapsNamed}, data-map-inits={entities.DataMapInitsNamed}, data-map-holders={entities.DataMapHoldersNamed}, skipped={entities.Skipped}, " +
                     $"round-trip-failures={entities.RoundTripFailures}, dangling-bases={entities.DanglingBases}.");
                 health.Count("entity-classes.classes", entities.ClassesFound);
                 health.Count("entity-classes.typed", entities.Typed);
                 health.Count("entity-classes.schema-bindings", entities.SchemaBindingsNamed);
                 health.Count("entity-classes.data-maps", entities.DataMapsNamed);
+                health.Count("entity-classes.data-map-inits", entities.DataMapInitsNamed);
+                health.Count("entity-classes.data-map-holders", entities.DataMapHoldersNamed);
                 var entityWarnings = new List<string>();
                 if (entities.Layout.StartsWith("drift", StringComparison.Ordinal)) entityWarnings.Add(entities.Layout);
                 if (entities.RoundTripFailures > 0) entityWarnings.Add($"{entities.RoundTripFailures} round-trip failure(s)");
