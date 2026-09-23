@@ -274,7 +274,7 @@ public static unsafe class SchemaImport
             [
                 "-target", "x86_64-pc-windows-msvc19.16.27045", "-D_CRT_STDIO_LEGACY_WIDE_SPECIFIERS",
                 "-D_CRT_SECURE_NO_WARNINGS", "-D_CRT_NONSTDC_NO_DEPRECATE", "-D_CRT_SECURE_NO_DEPRECATE",
-                "-D_CRT_DECLARE_NONSTDC_NAMES", "-DDEBUG", "-D_DEBUG", "-DWIN32", "-D_WINDOWS",
+                "-D_CRT_DECLARE_NONSTDC_NAMES", "-DWIN32", "-D_WINDOWS",
                 "-DCOMPILER_MSVC", "-DCOMPILER_MSVC64", "-DX64BITS", "-DPLATFORM_64BITS", "-D_WIN32=1",
                 "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH=1", "-D__unaligned=",
                 "-D_CRT_USE_BUILTIN_OFFSETOF=1",
