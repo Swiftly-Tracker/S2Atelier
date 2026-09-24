@@ -132,6 +132,8 @@ Each publish is a single self-contained binary; a worker relaunches that exact b
 
 ## Acknowledgements
 
+Thanks [zer0k-z](https://github.com/zer0k-z) for the name idea.
+
 All of the acknowledgements can be seen in [THIRDPARTY.md](THIRDPARTY.md)
 
 ## License
