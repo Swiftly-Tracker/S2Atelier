@@ -104,6 +104,10 @@ internal static class SdkVTableTests
         Check(EntityClassNaming.CallbackName("m_pfnRegisterPulseBindings") == "RegisterPulseBindings" &&
               EntityClassNaming.CallbackName("m_NameToThinkFunc") == "NameToThinkFunc" &&
               EntityClassNaming.CallbackName("Other") == "Other", "callback names drop the member prefix");
+        // datamap_t *DataMapInit<CRectLight>(CRectLight *), as MSVC and the Itanium ABI mangle it.
+        Check(EntityClassNaming.DataMapInitName("CRectLight", true) == "??$DataMapInit@VCRectLight@@@@YAPEAUdatamap_t@@PEAVCRectLight@@@Z" &&
+              EntityClassNaming.DataMapInitName("CRectLight", false) == "_Z11DataMapInitI10CRectLightEP9datamap_tPT_",
+            "DataMapInit names are mangled");
     }
 
     internal static void GlobalVars()

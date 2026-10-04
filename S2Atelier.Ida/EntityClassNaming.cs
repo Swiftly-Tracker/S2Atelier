@@ -11,6 +11,9 @@ internal sealed record EntityClassNamingSummary(
     int SchemaBindingsNamed, int DataMapsNamed, int Skipped,
     int AbstractInfos, int RoundTripFailures, int DanglingBases, string Layout)
 {
+    internal int DataMapInitsNamed { get; init; }
+    internal int DataMapHoldersNamed { get; init; }
+
     internal static EntityClassNamingSummary Empty(string layout) => new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, layout);
 }
 
@@ -384,6 +387,8 @@ internal static unsafe partial class EntityClassNaming
             return depth;
         }
 
+        var initializers = DataMapInits(stores, infos.Values.Select(x => x.DataMap).OfType<ulong>().ToHashSet());
+        int inits = 0, holders = 0;
         var sharedData = new Dictionary<ulong, string>();
         foreach (EntityClass entry in infos.Values.OrderBy(Depth).ThenBy(x => x.Cpp, StringComparer.Ordinal))
         {
@@ -397,11 +402,31 @@ internal static unsafe partial class EntityClassNaming
                 if (applyTypes) ApplyType(binding, "CSchemaClassInfo __s2_binding;");
             }
 
-            if (entry.DataMap is ulong dataMap && sharedData.TryAdd(dataMap, cpp) &&
-                NameData(dataMap, $"g_{cpp}DataDescMap", ref skipped))
+            if (entry.DataMap is ulong dataMap && sharedData.TryAdd(dataMap, cpp))
             {
-                dataMaps++;
-                if (applyTypes) ApplyType(dataMap, "datamap_t __s2_datamap;");
+                if (NameData(dataMap, $"g_{cpp}DataDescMap", ref skipped))
+                {
+                    dataMaps++;
+                    if (applyTypes) ApplyType(dataMap, "datamap_t __s2_datamap;");
+                }
+
+                if (initializers.TryGetValue(dataMap, out ulong init) && Identifier().IsMatch(cpp))
+                {
+                    bool typedInit = applyTypes && (ApplyType(init, $"datamap_t *__fastcall f({cpp} *);") ||
+                                                    ApplyType(init, "datamap_t *__fastcall f(void *);"));
+                    if (SdkFunctionBinding.TryNameFunction(init, DataMapInitName(cpp, msvc), typedInit, FunctionSource,
+                            diagnostic))
+                    {
+                        inits++;
+                    }
+
+                    if (DataMapHolder(stores, dataMap, init, infos.Values, layout) is ulong holder &&
+                        NameData(holder, $"{cpp}_DataDescInit::g_DataMapHolder", ref skipped))
+                    {
+                        holders++;
+                        if (applyTypes) ApplyType(holder, "datamap_t *__s2_holder;");
+                    }
+                }
             }
 
             if (entry.Object is not ulong entity)
@@ -449,8 +474,103 @@ internal static unsafe partial class EntityClassNaming
             }
         }
 
-        return new(objects.Count, named, typed, infosNamed, bindings, dataMaps, skipped, infos.Count - objects.Count, 0, 0, "");
+        return new(objects.Count, named, typed, infosNamed, bindings, dataMaps, skipped, infos.Count - objects.Count, 0, 0, "")
+        {
+            DataMapInitsNamed = inits,
+            DataMapHoldersNamed = holders,
+        };
     }
+
+    /// <summary>
+    /// <c>g_DataMapHolder</c>: the one location that only ever receives the map, from an initializer that calls
+    /// its <c>DataMapInit</c> or has it inlined. An info's <c>m_pDataDescMap</c> receives the map too.
+    /// </summary>
+    private static ulong? DataMapHolder(StoreMap stores, ulong map, ulong init, IEnumerable<EntityClass> infos,
+        Layout layout)
+    {
+        var calls = new HashSet<ulong>();
+        foreach (ulong site in Xrefs.CodeTo(init))
+        {
+            void* caller = IdaNative.get_func(site);
+            if (caller != null) calls.Add(*(ulong*)caller);
+        }
+
+        var infoSlots = infos.Select(x => x.Info + layout.DataMap).ToHashSet();
+        var found = stores.TargetsOf(map).Distinct()
+            .Where(t => !infoSlots.Contains(t) && stores.Entries[t].All(x => x.Value == map) &&
+                        stores.Entries[t].All(x => calls.Contains(x.Function) ||
+                                                   stores.ReturnersOf(map).Contains(x.Function)))
+            .ToList();
+        return found.Count == 1 ? found[0] : null;
+    }
+
+    /// <summary>
+    /// Each data map's <c>DataMapInit&lt;T&gt;</c>: it fills the map's fields, including the base's map, and
+    /// returns the map, so it is a function that references the map and always returns it. The map's
+    /// <c>GetDataDescMap</c> and a derived class's <c>GetBaseMap</c> return it too, in two instructions. The
+    /// initializer of <c>g_DataMapHolder</c> returns it after storing it there, and may have the whole body
+    /// inlined; the function itself never stores the map.
+    /// </summary>
+    private static Dictionary<ulong, ulong> DataMapInits(StoreMap stores, HashSet<ulong> maps)
+    {
+        var referenced = new Dictionary<ulong, HashSet<ulong>>();
+        foreach (ulong map in maps)
+        {
+            foreach (ulong from in DataMapFields.SelectMany(offset => Xrefs.DataTo(map + offset)))
+            {
+                void* function = IdaNative.get_func(from);
+                if (function != null)
+                {
+                    ulong start = *(ulong*)function;
+                    if (!referenced.TryGetValue(start, out var set)) referenced[start] = set = [];
+                    set.Add(map);
+                }
+            }
+        }
+
+        var result = new Dictionary<ulong, ulong>();
+        foreach (ulong map in maps)
+        {
+            var found = stores.ReturnersOf(map)
+                .Where(f => referenced.TryGetValue(f, out var set) && set.Contains(map) &&
+                            Instructions(f, MinInitInstructions) >= MinInitInstructions &&
+                            !stores.TargetsOf(map).Any(t => stores.Entries[t].Any(x => x.Function == f)))
+                .ToList();
+            if (found.Count == 1)
+            {
+                result[map] = found[0];
+            }
+        }
+
+        return result;
+    }
+
+    // datamap_t's dataDesc, dataNumFields, dataClassName and baseMap.
+    private static readonly ulong[] DataMapFields = [0x00, 0x08, 0x10, 0x18];
+    private const int MinInitInstructions = 4;
+
+    private static int Instructions(ulong function, int limit)
+    {
+        void* pfn = IdaNative.get_func(function);
+        if (pfn == null) return 0;
+        ulong end = *((ulong*)pfn + 1);
+        int count = 0;
+        for (ulong ea = function; ea < end && ea != ulong.MaxValue && count < limit; ea = IdaNative.next_head(ea, end))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// The mangled name of <c>datamap_t *DataMapInit&lt;T&gt;(T *)</c>: IDA names cannot hold the angle brackets,
+    /// but it shows a mangled name demangled.
+    /// </summary>
+    internal static string DataMapInitName(string cpp, bool msvc)
+        => msvc
+            ? $"??$DataMapInit@V{cpp}@@@@YAPEAUdatamap_t@@PEAV{cpp}@@@Z"
+            : $"_Z11DataMapInitI{cpp.Length}{cpp}EP9datamap_tPT_";
 
     // The accessor stored m_pClassInfo; it returns a cached pointer it stores the object to, and passes the
     // guards of both statics, next to them, to the thread-safe-static helpers.

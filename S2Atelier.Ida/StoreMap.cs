@@ -53,6 +53,16 @@ internal sealed unsafe class StoreMap
     /// <summary>The locations code stores this address to.</summary>
     internal IReadOnlyList<ulong> TargetsOf(ulong value) => _targets.TryGetValue(value, out var targets) ? targets : [];
 
+    /// <summary>The functions that always return this address.</summary>
+    internal IReadOnlyList<ulong> ReturnersOf(ulong value)
+    {
+        _returners ??= _returns.Where(x => x.Value != null).GroupBy(x => x.Value!.Value)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Key).Order().ToList());
+        return _returners.TryGetValue(value, out var functions) ? functions : [];
+    }
+
+    private Dictionary<ulong, List<ulong>>? _returners;
+
     /// <summary>Constant addresses a function passes as the first argument of its calls.</summary>
     internal IReadOnlyCollection<ulong> CallArguments(ulong function)
         => _arguments.TryGetValue(function, out var arguments) ? arguments : [];
