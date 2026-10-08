@@ -386,7 +386,9 @@ static unsafe void TestNativeSchemaVTables()
             SetName(start + 0x40, "??_7S2TestDerived@@6BS2TestOther@@@");
             // MSVC x64 COL with image-relative self/type/hierarchy references.
             WritePointers(start + 0x38, [start + 0x200]);
-            uint[] locator = [1, 8, 0, 0x300, 0x320, 0x200];
+            byte[] typeName = System.Text.Encoding.ASCII.GetBytes(".?AVS2TestDerived@@\0");
+            fixed (byte* bytes = typeName) IdaNative.put_bytes(start + 0x310, bytes, (nuint)typeName.Length);
+            uint[] locator = [1, 8, 0, 0x300, 0x340, 0x200];
             fixed (uint* bytes = locator) IdaNative.put_bytes(start + 0x200, bytes, 24);
             SchemaImport.VTableScan msvc = SchemaImport.ScanVTables(selection, SchemaTargetPlatform.WindowsMsvc);
             Equal(2, msvc.Tables.Count);

@@ -15,7 +15,7 @@ sync_repo() {
   fi
   git -C "$root/sources/$name" submodule update --init --recursive
 }
-sync_repo hl2sdk https://github.com/alliedmodders/hl2sdk.git cs2
+sync_repo hl2sdk https://github.com/alliedmodders/s2sdk.git cs2
 sync_repo CS2-Dumps https://github.com/Swiftly-Tracker/CS2-Dumps.git main
 cmake -S "$root/sources/hl2sdk/thirdparty/protobuf-3.21.8/cmake" -B "$root/tools/protobuf-build" \
   -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release

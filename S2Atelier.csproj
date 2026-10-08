@@ -29,6 +29,7 @@
     <Compile Remove="S2Atelier.Ida.Codegen\**\*.cs" />
     <Compile Remove="S2Atelier.Tests\**\*.cs" />
     <Compile Remove="S2Atelier.Automation\**\*.cs" />
+    <Compile Remove="S2Atelier.Automation.QueueTests\**\*.cs" />
     <Content Remove="S2Atelier.Automation\**" />
     <None Remove="S2Atelier.Automation\**" />
   </ItemGroup>

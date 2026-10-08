@@ -4,5 +4,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup><Content Include="pipeline.py;release.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="pipeline.py;release.py;scheduling.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../cs2_tracked_files.json" Link="cs2_tracked_files.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

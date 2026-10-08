@@ -108,20 +108,6 @@ namespace S2Atelier.Automation
         {
             lock (gate)
             {
-                if (request.PublishRelease)
-                {
-                    var existing = jobs.Values.FirstOrDefault(j => j.Request == request && j.State is "queued" or "running" or "succeeded");
-                    if (existing != null) return existing;
-                    var retry = jobs.Values.Where(j => j.Request == request && j.State == "failed")
-                        .OrderByDescending(j => j.CreatedAt).FirstOrDefault();
-                    if (retry != null)
-                    {
-                        retry = retry with { State = "queued", Error = null, FinishedAt = null, Files = null };
-                        Save(retry);
-                        signal.Release();
-                        return retry;
-                    }
-                }
                 if (jobs.Values.Count(j => j.State is "queued" or "running") >= 32) return null;
                 var job = new Job(Guid.NewGuid().ToString("N"), request, "queued", DateTimeOffset.UtcNow);
                 Directory.CreateDirectory(PathFor(job.Id, ""));

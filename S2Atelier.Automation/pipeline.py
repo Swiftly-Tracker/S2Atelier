@@ -13,6 +13,8 @@ import traceback
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, CancelledError
 from collections import defaultdict
+from contextlib import nullcontext
+from scheduling import analysis_workers, MemoryAdmission, container_cpus, group_priority
 from release import compress, publish, cleanup_payload, check_publish_access, previous_release, download, release_notes
 
 
@@ -49,6 +51,20 @@ def sha256(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b''):
             digest.update(chunk)
         return digest.hexdigest()
+
+
+def load_tracked_files():
+    path = Path(__file__).with_name('cs2_tracked_files.json')
+    if not path.exists():
+        path = Path(__file__).parent.parent / 'cs2_tracked_files.json'
+    return json.loads(path.read_text())
+
+
+def selected_binary(path, downloads, selections):
+    relative = path.relative_to(downloads).as_posix()
+    return not excluded_binary(path) and any(
+        re.search(pattern[6:], relative)
+        for patterns in selections.values() for pattern in patterns)
 
 
 def binary_platform(path):
@@ -102,8 +118,10 @@ def resolve_manifest(snapshot_dir, platform, depot=None):
             'manifestFile': str(path.relative_to(snapshot_dir)), 'sourceRevision': newest}
 
 
-def analyze(root, job, jobdir, platform, sdk, dumps):
+def analyze(root, job, jobdir, platform, sdk, dumps, executor=None, admission=None):
     request = job['Request']
+    tracked = load_tracked_files()
+    selections = tracked_patterns(tracked, platform, request.get('BinaryRegex'))
     jobdir.mkdir(exist_ok=True)
     revision = request['DumpsCommit']
     if not revision or not re.fullmatch(r'[0-9a-fA-F]{40}', revision):
@@ -118,7 +136,7 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
     print('Resolved manifest:', json.dumps(resolved), flush=True)
     provenance = {**resolved, 'platform': platform,
                   'hl2sdkCommit': git(sdk, 'rev-parse', 'HEAD'), 'dumpsCommit': revision,
-                  'idaSdk': '9.4',
+                  'idaSdk': '9.4', 'binarySelection': selections,
                   'analyzerSha256': sha256(root / 'tools/atelier' / platform / ('S2Atelier.exe' if platform == 'windows' else 'S2Atelier')),
                   'downloaderSha256': sha256(root / 'tools/downloader/SteamDepotDownload.App'),
                   'containerImage': subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', 's2atelier-' + platform + ':local'], text=True).strip(),
@@ -134,7 +152,7 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
     if provenance_file.exists():
         old = json.loads(provenance_file.read_text())
         old_baseline = old.get('baseline')
-        for key in ('dumpsCommit', 'hl2sdkCommit', 'analyzerSha256', 'downloaderSha256', 'containerImage'):
+        for key in ('dumpsCommit', 'hl2sdkCommit', 'analyzerSha256', 'downloaderSha256', 'containerImage', 'binarySelection'):
             if old.get(key) != provenance[key]:
                 raise RuntimeError(f'Cannot resume with changed {key}; use a new job for changed inputs.')
         if old.get('baseAnalysis') is not None and old['baseAnalysis'] != provenance.get('baseAnalysis'):
@@ -149,7 +167,6 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
     downloads = jobdir / 'binaries'
     downloads.mkdir(exist_ok=True)
     filelist = jobdir / 'filelist.json'
-    tracked = json.loads(git(dumps, 'show', revision + ':tracked_files.json'))
     (jobdir / 'tracked_files.json').write_text(json.dumps(tracked, indent=2))
     selections = tracked_patterns(tracked, platform, request.get('BinaryRegex'))
     provenance['depots'] = []
@@ -162,7 +179,7 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
              '-manifest', source['manifestId'], '-os', platform, '-osarch', '64', '-filelist', filelist, '-dir', downloads],
             stdin=subprocess.DEVNULL)
     atomic_json(provenance_file, provenance)
-    binaries = sorted(p for p in downloads.rglob('*') if p.is_file() and '.sdd' not in p.parts and not excluded_binary(p) and binary_platform(p) == platform)
+    binaries = sorted(p for p in downloads.rglob('*') if p.is_file() and '.sdd' not in p.parts and selected_binary(p, downloads, selections) and binary_platform(p) == platform)
     if not binaries:
         raise RuntimeError('No matching x64 binaries downloaded for requested platform.')
     binaries.sort(key=lambda p: (p.name.casefold(), str(p)))
@@ -177,9 +194,11 @@ def analyze(root, job, jobdir, platform, sdk, dumps):
     provenance['analysisWorkers'] = workers
     print(f'Analyzing {len(binaries)} {platform} binaries with {workers} parallel containers', flush=True)
     # A group owns its basename/archive; duplicate names cannot race during compression.
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(analyze_group, root, job, jobdir, platform, sdk, provenance,
-                                   group, previous): name for name, group in groups.items()}
+    history = timing_history(root, platform)
+    ordered = sorted(groups.items(), key=lambda item: group_priority(item[1], history), reverse=True)
+    with (ThreadPoolExecutor(max_workers=workers) if executor is None else nullcontext(executor)) as pool:
+        futures = {pool.submit(scheduled_group, admission, root, job, jobdir, platform, sdk, provenance,
+                               group, previous): name for name, group in ordered}
         errors = []
         for future in as_completed(futures):
             try:
@@ -224,11 +243,28 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
-def analysis_workers():
-    value = int(os.environ.get('S2A_ANALYSIS_WORKERS', '2'))
-    if not 1 <= value <= 16:
-        raise RuntimeError('S2A_ANALYSIS_WORKERS must be between 1 and 16')
-    return value
+def timing_history(root, platform):
+    history = {}
+    paths = sorted((root / 'jobs').glob('*/provenance.json'), key=lambda p: p.stat().st_mtime)
+    for path in paths:
+        try:
+            data = json.loads(path.read_text())
+            for entry in data.get('platforms', []):
+                if entry.get('platform') != platform:
+                    continue
+                for record in entry.get('artifacts', []):
+                    seconds = sum(record.get(k, 0) for k in ('analysisSeconds', 'baseAnalysisSeconds', 'importSeconds'))
+                    if seconds > 0:
+                        name = Path(record['path']).name.removesuffix('.i64').casefold()
+                        history[name] = seconds
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return history
+
+
+def scheduled_group(admission, *args):
+    with admission.acquire(args[-2]) if admission else nullcontext():
+        return analyze_group(*args)
 
 
 def analyze_group(root, job, jobdir, platform, sdk, provenance, binaries, previous):
@@ -339,7 +375,7 @@ def run_analyzer(root, job, jobdir, sdk, host, unique, image, input_path, extra_
     shutil.copytree(root / 'state' / host, ida_state, dirs_exist_ok=True)
     command = ['docker', 'run', '--rm', '--init', '--name', f"s2a-{job['Id']}-{host}-{unique}",
                '--label', 's2atelier.job=' + job['Id'], '--network', 'none',
-               '--cpus', '2', '--memory', os.environ.get('S2A_ANALYSIS_MEMORY', '3g'), '--pids-limit', '256',
+               *container_cpus(), '--memory', os.environ.get('S2A_ANALYSIS_MEMORY', '3g'), '--pids-limit', '256',
                '-e', 'S2ATELIER_CLANG_RESOURCE_DIR=' + mounted(Path('/clang')),
                '-v', f'{root}/tools/clang21:/clang:ro',
                '-v', f'{diagnostics}:' + ('/wine/drive_c/users/root/AppData/Local/Temp' if host == 'windows' else '/tmp'),
@@ -399,9 +435,8 @@ def excluded_binary(path):
 
 
 def tracked_patterns(tracked, platform, override=None):
-    # Keep upstream regex semantics, intersected with native binary extensions.
-    # Shared depots can contain Windows tools/DLLs as well as platform depots.
-    depots = ('2347770', '2347771', '2347779') if platform == 'windows' else ('2347770', '2347773', '2347779')
+    # Preserve the deployed platform-depot allowlist and intersect overrides.
+    depots = ('2347771',) if platform == 'windows' else ('2347773',)
     extension = r'.*\.(dll|exe)$' if platform == 'windows' else r'.*\.so$'
     result = {}
     for depot in depots:
@@ -420,13 +455,19 @@ def pipeline(root, jobfile):
     jobdir = jobfile.parent
     if request.get('PublishRelease', True):
         check_publish_access()
-    sdk = sync(root, 'hl2sdk', 'https://github.com/alliedmodders/hl2sdk.git', 'cs2')
+    sdk = sync(root, 'hl2sdk', 'https://github.com/alliedmodders/s2sdk.git', 'cs2')
     dumps = sync(root, 'CS2-Dumps', 'https://github.com/Swiftly-Tracker/CS2-Dumps.git', 'main')
     platforms = ('windows', 'linux') if request['Platform'] == 'all' else (request['Platform'],)
     provenance = {'dumpsCommit': request['DumpsCommit'], 'platforms': []}
-    for platform in platforms:
-        provenance['platforms'].append(analyze(root, job, jobdir / platform, platform, sdk, dumps))
-        atomic_json(jobdir / 'provenance.json', provenance)
+    # Platform preparation and tails overlap; one pool bounds total module concurrency.
+    admission = MemoryAdmission()
+    with ThreadPoolExecutor(max_workers=analysis_workers()) as modules, ThreadPoolExecutor(max_workers=len(platforms)) as preparations:
+        pending = {preparations.submit(analyze, root, job, jobdir / platform, platform, sdk, dumps,
+                                       modules, admission): platform for platform in platforms}
+        for future in as_completed(pending):
+            provenance['platforms'].append(future.result())
+            provenance['platforms'].sort(key=lambda p: p['platform'])
+            atomic_json(jobdir / 'provenance.json', provenance)
     if request.get('PublishRelease', True):
         subject = git(dumps, 'show', '-s', '--format=%s', request['DumpsCommit'])
         archives = sorted(jobdir.glob('*/artifacts/*.7z'))

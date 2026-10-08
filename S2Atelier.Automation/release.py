@@ -7,6 +7,9 @@ import re
 import shutil
 import subprocess
 import time
+import uuid
+import threading
+from functools import wraps
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,10 +28,40 @@ def digest(path):
         return value.hexdigest()
 
 
+_compression_slots = None
+_compression_lock = threading.Lock()
+
+
+def bounded_compression(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        global _compression_slots
+        with _compression_lock:
+            if _compression_slots is None:
+                count = int(os.environ.get('S2A_COMPRESSION_WORKERS', '4'))
+                if not 1 <= count <= 32:
+                    raise ValueError('S2A_COMPRESSION_WORKERS must be between 1 and 32')
+                _compression_slots = threading.BoundedSemaphore(count)
+        with _compression_slots:
+            return function(*args, **kwargs)
+    return wrapped
+
+
+def compression_options():
+    level = int(os.environ.get('S2A_COMPRESSION_LEVEL', '9'))
+    threads = int(os.environ.get('S2A_COMPRESSION_THREADS', '2'))
+    if not 1 <= level <= 9 or not 1 <= threads <= 64:
+        raise ValueError('Compression level must be 1..9 and threads 1..64')
+    return [f'-mx={level}', '-m0=lzma2', '-md=32m' if level < 7 else '-md=64m',
+            '-mfb=64' if level < 7 else '-mfb=273', '-ms=on', f'-mmt={threads}']
+
+
+@bounded_compression
 def compress(archive, files, base_dir=None):
     executable = shutil.which('7zz') or shutil.which('7z')
     if not executable:
         raise RuntimeError('7-Zip is required (install Debian package 7zip).')
+    options = compression_options()
     members = [p.relative_to(base_dir) if base_dir else Path(p.name) for p in files]
     if len({str(p).casefold() for p in members}) != len(files):
         raise RuntimeError('Duplicate filenames inside archive')
@@ -44,8 +77,7 @@ def compress(archive, files, base_dir=None):
             (staging / member).parent.mkdir(parents=True, exist_ok=True)
             os.link(path, staging / member)
         archive.unlink(missing_ok=True)
-        subprocess.run([executable, 'a', '-t7z', '-mx=9', '-m0=lzma2', '-md=64m',
-                        '-mfb=273', '-ms=on', '-mmt=2', str(archive.resolve()), '--',
+        subprocess.run([executable, 'a', '-t7z', *options, str(archive.resolve()), '--',
                         *[str(p) for p in members]], cwd=staging, check=True)
         subprocess.run([executable, 't', str(archive.resolve())], check=True)
     finally:
@@ -53,7 +85,7 @@ def compress(archive, files, base_dir=None):
 
 
 BODY = ('IDA 9.4 databases for [CS2-Dumps `{revision}`](https://github.com/Swiftly-Tracker/CS2-Dumps/commit/{revision}).\n\n'
-        'Individual databases and common bundles use 7z/LZMA2 maximum compression. '
+        'Individual databases and common bundles use 7z/LZMA2 compression. '
         'Each common bundle contains server, engine2 and tier0 databases. See provenance.json for inputs and hashes. '
         'snapshots-<platform>.7z holds each module\'s analysis snapshot, the baseline of the next release.')
 
@@ -170,20 +202,58 @@ def matches(asset, path):
             asset.get('digest') == 'sha256:' + digest(path))
 
 
+def release_target(jobdir, revision, subject):
+    """Persist a unique publication identity; retries reuse only our own release."""
+    target_file = jobdir / 'release-target.json'
+    target = json.loads(target_file.read_text()) if target_file.exists() else None
+    for _ in range(10):
+        if target is None:
+            token = uuid.uuid4().hex
+            target = {'tag': f'cs2-{revision}-{token}', 'marker': f'<!-- s2atelier-publication:{token} -->'}
+            temporary = target_file.with_suffix('.tmp')
+            temporary.write_text(json.dumps(target))
+            temporary.replace(target_file)
+        tag = target['tag']
+        try:
+            found = api('GET', API + '/releases/tags/' + tag)
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            if target['marker'] in found.get('body', ''):
+                return tag, found
+            target = None
+            continue
+        # Do not attach to a tag that exists without a release.
+        try:
+            api('GET', API + '/git/ref/tags/' + tag)
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            target = None
+            continue
+        try:
+            found = api('POST', API + '/releases', {
+                'tag_name': tag, 'name': release_title(subject), 'draft': True,
+                'body': f'IDA 9.4 databases for [CS2-Dumps `{revision}`](https://github.com/Swiftly-Tracker/CS2-Dumps/commit/{revision}).\n\n'
+                        'Individual databases and common bundles use 7z/LZMA2 compression. '
+                        'Each common bundle contains server, engine2 and tier0 databases. See provenance.json for inputs and hashes.\n\n'
+                        + target['marker']})
+            return tag, found
+        except urllib.error.HTTPError as error:
+            if error.code != 422:
+                raise
+            # Re-read after a conflicting create; never overwrite another release.
+    raise RuntimeError('Unable to allocate an unused release tag after 10 attempts')
+
+
 def publish(jobdir, revision, subject, archives, notes=None):
     if not archives or len({p.name.casefold() for p in archives}) != len(archives):
         raise RuntimeError('Empty or colliding Release asset names')
     if any(p.stat().st_size >= 2 * 1024**3 for p in archives):
         raise RuntimeError('A Release asset exceeds GitHub’s 2 GiB limit')
-    tag = 'cs2-' + revision
-    try:
-        release = api('GET', API + '/releases/tags/' + tag)
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
-        release = api('POST', API + '/releases', {
-            'tag_name': tag, 'name': release_title(subject), 'draft': True,
-            'body': BODY.format(revision=revision)})
+    tag, release = release_target(jobdir, revision, subject)
     files = archives + [jobdir / 'provenance.json']
     existing = {a['name']: a for a in assets(release['id'])}
     for path in files:
@@ -208,7 +278,7 @@ def publish(jobdir, revision, subject, archives, notes=None):
     if release['draft']:
         update = {'draft': False, 'name': release_title(subject)}
         if notes:
-            update['body'] = BODY.format(revision=revision) + '\n\n' + notes
+            update['body'] = BODY.format(revision=revision) + '\n\n' + notes + '\n\n' + json.loads((jobdir / 'release-target.json').read_text())['marker']
         release = api('PATCH', API + '/releases/' + str(release['id']), update)
     # Read back publication before authorizing local cleanup.
     release = api('GET', API + '/releases/' + str(release['id']))

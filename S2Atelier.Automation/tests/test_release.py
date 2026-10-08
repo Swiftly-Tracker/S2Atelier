@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import pipeline
@@ -26,6 +27,7 @@ class ReleaseTests(unittest.TestCase):
         self.draft = True
         self.remote = {}
         self.events = []
+        (self.root / 'release-target.json').write_text(json.dumps({'tag':'cs2-test-unique','marker':'<!-- test-publication -->'}))
 
     def api(self, method, url, payload=None, path=None):
         self.events.append((method, url))
@@ -37,7 +39,47 @@ class ReleaseTests(unittest.TestCase):
             return self.remote[path.name]
         if method == 'PATCH':
             self.draft = payload['draft']
-        return dict(id=123, draft=self.draft, html_url='https://github.com/test/release', upload_url='https://uploads.github.com/test{?name}')
+        return dict(id=123, draft=self.draft, body='<!-- test-publication -->', html_url='https://github.com/test/release', upload_url='https://uploads.github.com/test{?name}')
+
+    def test_unique_tag_collision_and_retry_identity(self):
+        # A persisted candidate belongs to somebody else; allocate a new identity.
+        created = {}
+        def api(method, url, payload=None, path=None):
+            if method == 'GET':
+                if url.endswith('/cs2-test-unique'):
+                    return {'id': 1, 'body': 'another publication'}
+                if '/releases/tags/' in url and created:
+                    return created
+                raise urllib.error.HTTPError(url, 404, 'missing', {}, None)
+            self.assertEqual(method, 'POST')
+            self.assertEqual(url, release.API + '/releases')
+            created.update(payload, id=2)
+            return created
+        with patch.object(release, 'api', api):
+            tag, _ = release.release_target(self.root, 'a'*40, 'build')
+            self.assertTrue(tag.startswith('cs2-' + 'a'*40 + '-'))
+            self.assertNotEqual(tag, 'cs2-test-unique')
+            retry_tag, retry = release.release_target(self.root, 'a'*40, 'build')
+            self.assertEqual(tag, retry_tag)
+            self.assertEqual(retry['id'], 2)
+
+    def test_existing_bare_tag_is_skipped(self):
+        (self.root / 'release-target.json').unlink()
+        tags = []
+        def api(method, url, payload=None, path=None):
+            if '/releases/tags/' in url:
+                tags.append(url.rsplit('/', 1)[-1])
+                raise urllib.error.HTTPError(url, 404, 'missing', {}, None)
+            if '/git/ref/tags/' in url:
+                if len(tags) == 1:
+                    return {'ref': 'occupied'}
+                raise urllib.error.HTTPError(url, 404, 'missing', {}, None)
+            return {'id': 2, **payload}
+        with patch.object(release, 'api', api):
+            tag, _ = release.release_target(self.root, 'a'*40, 'build')
+        self.assertEqual(len(tags), 2)
+        self.assertNotEqual(tags[0], tags[1])
+        self.assertEqual(tag, tags[1])
 
     @unittest.skipUnless(shutil.which('7z') or shutil.which('7zz'), '7-Zip unavailable')
     def test_real_archive_flat_common_and_duplicate_paths(self):
@@ -64,6 +106,13 @@ class ReleaseTests(unittest.TestCase):
                 release.check_publish_access()
         with patch.object(release, 'api', return_value={'permissions': {'push': True}}):
             release.check_publish_access()
+
+    def test_fast_compression_options_and_validation(self):
+        with patch.dict(os.environ, {'S2A_COMPRESSION_LEVEL':'3','S2A_COMPRESSION_THREADS':'4'}):
+            self.assertEqual(release.compression_options(), ['-mx=3','-m0=lzma2','-md=32m','-mfb=64','-ms=on','-mmt=4'])
+        for value in ('0','10','invalid'):
+            with patch.dict(os.environ, {'S2A_COMPRESSION_LEVEL':value}), self.assertRaises(ValueError):
+                release.compression_options()
 
     def test_title(self):
         self.assertEqual(release.release_title('25218825 - 1.41.8.1 | 3 modified | Sep 09 2026 15:23:58'),
@@ -126,7 +175,8 @@ class ReleaseTests(unittest.TestCase):
             return self.api(method, url, payload, path)
         with patch.object(release, 'api', api):
             release.publish(self.root, 'a'*40, 'build', [self.archive], '## Analysis report')
-        self.assertTrue(bodies[-1].endswith('## Analysis report'))
+        self.assertIn('## Analysis report', bodies[-1])
+        self.assertTrue(bodies[-1].endswith('<!-- test-publication -->'))
 
     def test_baseline_is_the_newest_other_published_release(self):
         asset = {'name': 'snapshots-windows.7z', 'url': 'https://api.github.com/assets/1'}
@@ -139,19 +189,23 @@ class ReleaseTests(unittest.TestCase):
                              ('cs2-' + 'e'*40, asset))
             self.assertIsNone(release.previous_release('cs2-' + 'e'*40, 'snapshots-linux.7z'))
 
-    def test_upstream_regex_and_platform_intersection(self):
-        tracked = json.loads((Path(__file__).parent / 'tracked_files.fixture.json').read_text())
+    def test_local_allowlist_and_platform_intersection(self):
+        tracked = pipeline.load_tracked_files()
         windows = pipeline.tracked_patterns(tracked, 'windows')
         linux = pipeline.tracked_patterns(tracked, 'linux')
-        def matches(patterns, depot, path):
-            return any(re.search(p[6:], path, re.I) for p in patterns[depot])
-        self.assertTrue(matches(windows, '2347771', 'game/bin/win64/engine2.dll'))
-        self.assertTrue(matches(windows, '2347779', 'game/bin/win64/tool.exe'))
-        self.assertFalse(matches(windows, '2347779', 'game/import_scripts/bin/tool.dll'))
-        self.assertFalse(matches(windows, '2347770', 'game/pak_dir.vpk'))
-        self.assertFalse(matches(windows, '2347770', 'game/image.jpg'))
-        self.assertTrue(matches(linux, '2347773', 'game/bin/linuxsteamrt64/libtier0.so'))
-        self.assertFalse(matches(linux, '2347773', 'game/start.sh'))
+        self.assertEqual(set(windows), {'2347771'})
+        self.assertEqual(set(linux), {'2347773'})
+        def matches(patterns, path):
+            return pipeline.selected_binary(Path('/downloads') / path, Path('/downloads'), patterns)
+        self.assertTrue(matches(windows, 'game/bin/win64/engine2.dll'))
+        self.assertTrue(matches(windows, 'game/csgo/bin/win64/server.dll'))
+        for path in ('game/bin/win64/tool.exe', 'game/bin/win64/unlisted.dll', 'game/pak_dir.vpk', 'game/bin/win64/assetrename.dll'):
+            self.assertFalse(matches(windows, path))
+        self.assertTrue(matches(linux, 'game/bin/linuxsteamrt64/libtier0.so'))
+        self.assertFalse(matches(linux, 'game/bin/linuxsteamrt64/libunlisted.so'))
+        narrowed = pipeline.tracked_patterns(tracked, 'windows', 'server')
+        self.assertTrue(matches(narrowed, 'game/csgo/bin/win64/server.dll'))
+        self.assertFalse(matches(narrowed, 'game/bin/win64/engine2.dll'))
 
 
 if __name__ == '__main__': unittest.main()

@@ -21,10 +21,11 @@ class ParallelTests(unittest.TestCase):
             downloads = jobdir / 'binaries'; downloads.mkdir()
             for name in ('liba.so', 'libb.so'):
                 (downloads / name).write_bytes(name.encode())
+            (downloads / 'libunlisted.so').write_bytes(b'cached but outside allowlist')
             for name in ('tools/atelier/linux/S2Atelier', 'tools/downloader/SteamDepotDownload.App'):
                 path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'tool')
             (root / 'state/linux').mkdir(parents=True)
-            tracked = {str(i): ['regex:.+?\\.so$'] for i in (2347770, 2347773, 2347779)}
+            tracked = {'2347773': ['regex:lib[ab]\\.so$']}
             job = {'Id': 'a'*32, 'Request': {'DumpsCommit': 'b'*40, 'PublishRelease': False, 'ImportSchema': False}}
             barrier = threading.Barrier(2)
             commands = []
@@ -42,6 +43,8 @@ class ParallelTests(unittest.TestCase):
             def snapshot(repo, revision, target): target.mkdir()
             with patch.dict(os.environ, {'S2A_ANALYSIS_WORKERS': '2'}), \
                  patch.object(pipeline, 'git', git), patch.object(pipeline, 'snapshot', snapshot), \
+                 patch.object(pipeline, 'load_tracked_files', return_value=tracked), \
+                 patch.object(pipeline, 'fetch_baseline', return_value=None), \
                  patch.object(pipeline, 'resolve_manifest', return_value={'appId':730, 'depotId':2347773, 'manifestId':'123'}), \
                  patch.object(pipeline, 'binary_platform', side_effect=lambda p: 'linux' if p.suffix == '.so' else None), \
                  patch.object(pipeline.subprocess, 'check_output', return_value='test-image'), \
@@ -80,9 +83,12 @@ class ParallelTests(unittest.TestCase):
                 self.assertFalse(stale.exists())
                 self.assertEqual(len(migrated['artifacts']), 2)
                 self.assertNotIn(stale.name, migrated['archiveHashes'])
+                tracked['2347773'] = ['regex:liba\\.so$']
+                with self.assertRaisesRegex(RuntimeError, 'changed binarySelection'):
+                    pipeline.analyze(root, job, jobdir, 'linux', root/'sdk', root/'dumps')
 
     def test_worker_limit(self):
-        for value in ('0', '17', 'invalid'):
+        for value in ('0', '65', 'invalid'):
             with patch.dict(os.environ, {'S2A_ANALYSIS_WORKERS': value}), self.assertRaises((ValueError, RuntimeError)):
                 pipeline.analysis_workers()
 
